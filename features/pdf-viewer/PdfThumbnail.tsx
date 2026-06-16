@@ -1,0 +1,85 @@
+'use client';
+
+import { useEffect, useRef, useState } from 'react';
+import { cn } from '@/lib/utils';
+
+interface PdfThumbnailProps {
+  file: File;
+  pageIndex: number;
+  isActive: boolean;
+  onClick: () => void;
+}
+
+export function PdfThumbnail({ file, pageIndex, isActive, onClick }: PdfThumbnailProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    let cancelled = false;
+
+    const render = async () => {
+      try {
+        const pdfjsLib = await import('pdfjs-dist');
+        pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
+
+        const arrayBuffer = await file.arrayBuffer();
+        if (cancelled) return;
+
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        if (cancelled) return;
+
+        const page = await pdf.getPage(pageIndex + 1);
+        if (cancelled) return;
+
+        const viewport = page.getViewport({ scale: 0.2 });
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx || cancelled) return;
+
+        await page.render({ canvas, canvasContext: ctx, viewport }).promise;
+        if (!cancelled) setReady(true);
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!msg.includes('cancel')) console.warn('[Thumbnail]', msg);
+      }
+    };
+
+    render();
+    return () => { cancelled = true; };
+  }, [file, pageIndex]);
+
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        'group flex flex-col items-center gap-1.5 p-2 rounded-lg transition-all w-full',
+        isActive
+          ? 'bg-blue-50 ring-2 ring-blue-500'
+          : 'hover:bg-gray-50 ring-1 ring-transparent hover:ring-gray-200'
+      )}
+    >
+      <div className="overflow-hidden rounded shadow-sm w-full bg-white relative" style={{ minHeight: 60 }}>
+        <canvas
+          ref={canvasRef}
+          className="w-full h-auto block"
+          style={{ opacity: ready ? 1 : 0, transition: 'opacity 0.2s' }}
+        />
+        {!ready && (
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-50">
+            <div className="w-3 h-3 rounded-full border-2 border-gray-300 border-t-blue-400 animate-spin" />
+          </div>
+        )}
+      </div>
+      <span className={cn(
+        'text-xs font-medium',
+        isActive ? 'text-blue-600' : 'text-gray-500 group-hover:text-gray-700'
+      )}>
+        {pageIndex + 1}
+      </span>
+    </button>
+  );
+}
