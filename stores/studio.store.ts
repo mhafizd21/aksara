@@ -2,16 +2,10 @@ import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
 import type { PdfElement, PdfDocument, SignatureMode } from '@/types';
 import { generateId } from '@/lib/utils';
-import {
-  DEFAULT_TEXT_ELEMENT,
-  DEFAULT_DATE_ELEMENT,
-  DEFAULT_SCALE,
-} from '@/lib/constants';
+import { DEFAULT_TEXT_ELEMENT, DEFAULT_DATE_ELEMENT, DEFAULT_SCALE } from '@/lib/constants';
 import { formatDate } from '@/lib/utils';
 
-interface HistoryEntry {
-  elements: PdfElement[];
-}
+interface HistoryEntry { elements: PdfElement[]; }
 
 interface StudioState {
   document: PdfDocument | null;
@@ -23,8 +17,10 @@ interface StudioState {
   signatureMode: SignatureMode;
   isSignatureModalOpen: boolean;
   isExporting: boolean;
+  downloadFileName: string;
   pendingSignatureDataUrl: string | null;
   pendingSignatureSize: { width: number; height: number } | null;
+  clipboard: PdfElement | null;
   history: HistoryEntry[];
   historyIndex: number;
 
@@ -36,6 +32,7 @@ interface StudioState {
   setSignatureModalOpen: (open: boolean) => void;
   setSelectedId: (id: string | null) => void;
   setIsExporting: (v: boolean) => void;
+  setDownloadFileName: (name: string) => void;
   readySignatureForPlacement: (dataUrl: string, width: number, height: number) => void;
   placeSignatureAtPosition: (pageIndex: number, x: number, y: number) => void;
   cancelSignaturePlacement: () => void;
@@ -44,6 +41,9 @@ interface StudioState {
   updateElement: (id: string, updates: Partial<PdfElement>) => void;
   deleteElement: (id: string) => void;
   duplicateElement: (id: string) => void;
+  copyElement: (id: string) => void;
+  cutElement: (id: string) => void;
+  pasteElement: (x?: number, y?: number) => void;
   undo: () => void;
   redo: () => void;
   pushHistory: () => void;
@@ -62,12 +62,19 @@ export const useStudioStore = create<StudioState>()(
     signatureMode: 'draw',
     isSignatureModalOpen: false,
     isExporting: false,
+    downloadFileName: '',
     pendingSignatureDataUrl: null,
     pendingSignatureSize: null,
+    clipboard: null,
     history: [{ elements: [] }],
     historyIndex: 0,
 
-    setDocument: (doc) => set((s) => { s.document = doc; s.currentPage = 0; s.elements = []; }),
+    setDocument: (doc) => set((s) => {
+      s.document = doc;
+      s.currentPage = 0;
+      s.elements = [];
+      s.downloadFileName = doc ? doc.file.name.replace(/\.pdf$/i, '') + '_signed' : '';
+    }),
     setCurrentPage: (page) => set((s) => { s.currentPage = page; }),
     setScale: (scale) => set((s) => { s.scale = scale; }),
     setActiveToolMode: (mode) => set((s) => { s.activeToolMode = mode; }),
@@ -75,16 +82,14 @@ export const useStudioStore = create<StudioState>()(
     setSignatureModalOpen: (open) => set((s) => { s.isSignatureModalOpen = open; }),
     setSelectedId: (id) => set((s) => { s.selectedId = id; }),
     setIsExporting: (v) => set((s) => { s.isExporting = v; }),
+    setDownloadFileName: (name) => set((s) => { s.downloadFileName = name; }),
 
     pushHistory: () => {
       const { elements, history, historyIndex } = get();
       const newHistory = history.slice(0, historyIndex + 1);
       newHistory.push({ elements: JSON.parse(JSON.stringify(elements)) });
       if (newHistory.length > MAX_HISTORY) newHistory.shift();
-      set((s) => {
-        s.history = newHistory;
-        s.historyIndex = newHistory.length - 1;
-      });
+      set((s) => { s.history = newHistory; s.historyIndex = newHistory.length - 1; });
     },
 
     readySignatureForPlacement: (dataUrl, width, height) => {
@@ -102,40 +107,26 @@ export const useStudioStore = create<StudioState>()(
       get().pushHistory();
       const { width, height } = pendingSignatureSize;
       const el: PdfElement = {
-        id: generateId(),
-        type: 'signature',
-        pageIndex,
+        id: generateId(), type: 'signature', pageIndex,
         dataUrl: pendingSignatureDataUrl,
-        position: {
-          x: Math.max(0, x - width / 2),
-          y: Math.max(0, y - height / 2),
-        },
+        position: { x: Math.max(0, x - width / 2), y: Math.max(0, y - height / 2) },
         size: { width, height },
       };
       set((s) => {
-        s.elements.push(el);
-        s.selectedId = el.id;
+        s.elements.push(el); s.selectedId = el.id;
         s.activeToolMode = 'select';
-        s.pendingSignatureDataUrl = null;
-        s.pendingSignatureSize = null;
+        s.pendingSignatureDataUrl = null; s.pendingSignatureSize = null;
       });
     },
 
     cancelSignaturePlacement: () => {
-      set((s) => {
-        s.pendingSignatureDataUrl = null;
-        s.pendingSignatureSize = null;
-        s.activeToolMode = 'select';
-      });
+      set((s) => { s.pendingSignatureDataUrl = null; s.pendingSignatureSize = null; s.activeToolMode = 'select'; });
     },
 
     addTextField: (pageIndex, x, y) => {
       get().pushHistory();
       const el: PdfElement = {
-        id: generateId(),
-        type: 'text',
-        pageIndex,
-        content: 'Text here',
+        id: generateId(), type: 'text', pageIndex, content: 'Text here',
         position: {
           x: x !== undefined ? Math.max(0, x - DEFAULT_TEXT_ELEMENT.width / 2) : 100,
           y: y !== undefined ? Math.max(0, y - DEFAULT_TEXT_ELEMENT.height / 2) : 100,
@@ -151,9 +142,7 @@ export const useStudioStore = create<StudioState>()(
     addDateField: (pageIndex, x, y) => {
       get().pushHistory();
       const el: PdfElement = {
-        id: generateId(),
-        type: 'date',
-        pageIndex,
+        id: generateId(), type: 'date', pageIndex,
         content: formatDate(new Date(), DEFAULT_DATE_ELEMENT.format),
         position: {
           x: x !== undefined ? Math.max(0, x - DEFAULT_DATE_ELEMENT.width / 2) : 100,
@@ -191,6 +180,38 @@ export const useStudioStore = create<StudioState>()(
         ...JSON.parse(JSON.stringify(el)),
         id: generateId(),
         position: { x: el.position.x + 20, y: el.position.y + 20 },
+      };
+      set((s) => { s.elements.push(newEl); s.selectedId = newEl.id; });
+    },
+
+    copyElement: (id) => {
+      const el = get().elements.find((e) => e.id === id);
+      if (!el) return;
+      set((s) => { s.clipboard = JSON.parse(JSON.stringify(el)); });
+    },
+
+    cutElement: (id) => {
+      const el = get().elements.find((e) => e.id === id);
+      if (!el) return;
+      get().pushHistory();
+      set((s) => {
+        s.clipboard = JSON.parse(JSON.stringify(el));
+        s.elements = s.elements.filter((e) => e.id !== id);
+        if (s.selectedId === id) s.selectedId = null;
+      });
+    },
+
+    pasteElement: (x, y) => {
+      const { clipboard, currentPage } = get();
+      if (!clipboard) return;
+      get().pushHistory();
+      const newEl: PdfElement = {
+        ...JSON.parse(JSON.stringify(clipboard)),
+        id: generateId(),
+        pageIndex: currentPage,
+        position: x !== undefined && y !== undefined
+          ? { x: Math.max(0, x - clipboard.size.width / 2), y: Math.max(0, y - clipboard.size.height / 2) }
+          : { x: clipboard.position.x + 20, y: clipboard.position.y + 20 },
       };
       set((s) => { s.elements.push(newEl); s.selectedId = newEl.id; });
     },

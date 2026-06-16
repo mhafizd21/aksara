@@ -16,6 +16,12 @@ const SIGNATURE_FONTS = [
   { name: 'Pacifico', style: "'Pacifico', cursive" },
 ];
 
+const PRESET_COLORS = [
+  { label: 'Black', value: '#1a1a2e' },
+  { label: 'Blue', value: '#1d4ed8' },
+  { label: 'Red', value: '#dc2626' },
+];
+
 const MAX_SIG_WIDTH = 300;
 const MAX_SIG_HEIGHT = 150;
 
@@ -58,6 +64,35 @@ async function removeBackground(dataUrl: string, tolerance = 30): Promise<string
   });
 }
 
+async function recolorSignature(dataUrl: string, hexColor: string): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext('2d')!;
+      ctx.drawImage(img, 0, 0);
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
+      const tr = parseInt(hexColor.slice(1, 3), 16);
+      const tg = parseInt(hexColor.slice(3, 5), 16);
+      const tb = parseInt(hexColor.slice(5, 7), 16);
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i + 3] > 10) {
+          data[i] = tr;
+          data[i + 1] = tg;
+          data[i + 2] = tb;
+        }
+      }
+      ctx.putImageData(imageData, 0, 0);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+
 export function SignatureModal() {
   const {
     isSignatureModalOpen, setSignatureModalOpen, signatureMode, setSignatureMode,
@@ -73,6 +108,13 @@ export function SignatureModal() {
   const [bgRemoved, setBgRemoved] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [selectedColor, setSelectedColor] = useState(PRESET_COLORS[0].value);
+  const [customColor, setCustomColor] = useState('#1a1a2e');
+  const [isCustom, setIsCustom] = useState(false);
+  const colorInputRef = useRef<HTMLInputElement>(null);
+
+  const activeColor = isCustom ? customColor : selectedColor;
+
   const handleClose = useCallback(() => {
     setSignatureModalOpen(false);
     setTypedSignature('');
@@ -87,10 +129,11 @@ export function SignatureModal() {
     setBgRemoved(false);
   }, []);
 
-  const getSignatureDataUrl = useCallback((): string | null => {
+  const getSignatureDataUrl = useCallback(async (): Promise<string | null> => {
     if (signatureMode === 'draw') {
       if (!canvasRef.current || canvasRef.current.isEmpty()) return null;
-      return canvasRef.current.toDataURL('image/png');
+      const raw = canvasRef.current.toDataURL('image/png');
+      return recolorSignature(raw, activeColor);
     }
     if (signatureMode === 'type') {
       if (!typedSignature.trim()) return null;
@@ -100,7 +143,7 @@ export function SignatureModal() {
       const ctx = canvas.getContext('2d')!;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.font = `60px ${selectedFont.style}`;
-      ctx.fillStyle = '#1a1a2e';
+      ctx.fillStyle = activeColor;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(typedSignature, 200, 60);
@@ -110,10 +153,10 @@ export function SignatureModal() {
       return uploadedImage;
     }
     return null;
-  }, [signatureMode, typedSignature, selectedFont, uploadedImage]);
+  }, [signatureMode, typedSignature, selectedFont, uploadedImage, activeColor]);
 
   const handleApply = useCallback(async () => {
-    const dataUrl = getSignatureDataUrl();
+    const dataUrl = await getSignatureDataUrl();
     if (!dataUrl) return;
     const natural = await measureImage(dataUrl);
     const { width, height } = fitSize(natural.width, natural.height, MAX_SIG_WIDTH, MAX_SIG_HEIGHT);
@@ -155,11 +198,13 @@ export function SignatureModal() {
     { id: 'upload', label: 'Upload' },
   ];
 
+  const showColorPicker = signatureMode === 'draw' || signatureMode === 'type';
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={handleClose} />
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
-        {/* Header */}
+
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <h2 className="text-lg font-semibold text-gray-900">Create Signature</h2>
           <button onClick={handleClose} className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
@@ -167,32 +212,67 @@ export function SignatureModal() {
           </button>
         </div>
 
-        {/* Tabs */}
         <div className="flex px-6 pt-4 gap-1">
           {tabs.map((tab) => (
-            <button
-              key={tab.id}
+            <button key={tab.id}
               onClick={() => { setSignatureMode(tab.id); handleClear(); }}
               className={cn(
                 'px-4 py-2 text-sm font-medium rounded-lg transition-all',
-                signatureMode === tab.id
-                  ? 'bg-blue-50 text-blue-600'
-                  : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-              )}
-            >
+                signatureMode === tab.id ? 'bg-blue-50 text-blue-600' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+              )}>
               {tab.label}
             </button>
           ))}
         </div>
 
-        {/* Content */}
-        <div className="px-6 py-4">
+        <div className="px-6 py-4 space-y-4">
+
+          {showColorPicker && (
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-medium text-gray-500 shrink-0">Color</span>
+              <div className="flex items-center gap-2">
+                {PRESET_COLORS.map((c) => (
+                  <button key={c.value}
+                    onClick={() => { setSelectedColor(c.value); setIsCustom(false); }}
+                    title={c.label}
+                    className={cn(
+                      'w-6 h-6 rounded-full border-2 transition-all',
+                      !isCustom && selectedColor === c.value ? 'border-blue-500 scale-110' : 'border-transparent hover:scale-105'
+                    )}
+                    style={{ backgroundColor: c.value }}
+                  />
+                ))}
+                <div className="relative">
+                  <button
+                    onClick={() => colorInputRef.current?.click()}
+                    title="Custom color"
+                    className={cn(
+                      'w-6 h-6 rounded-full border-2 transition-all',
+                      isCustom ? 'border-blue-500 scale-110' : 'border-gray-300 hover:scale-105'
+                    )}
+                    style={{ background: 'conic-gradient(red, yellow, lime, cyan, blue, magenta, red)' }}
+                  />
+                  <input
+                    ref={colorInputRef}
+                    type="color"
+                    value={customColor}
+                    onChange={(e) => { setCustomColor(e.target.value); setIsCustom(true); }}
+                    className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+                  />
+                </div>
+                {isCustom && (
+                  <span className="text-xs text-gray-500 font-mono">{customColor}</span>
+                )}
+              </div>
+            </div>
+          )}
+
           {signatureMode === 'draw' && (
             <div>
               <div className="border-2 border-dashed border-gray-200 rounded-xl overflow-hidden bg-gray-50">
                 <SignatureCanvas
                   ref={canvasRef}
-                  penColor="#1a1a2e"
+                  penColor={activeColor}
                   canvasProps={{ width: 464, height: 200, className: 'w-full' }}
                   backgroundColor="transparent"
                 />
@@ -202,29 +282,21 @@ export function SignatureModal() {
           )}
 
           {signatureMode === 'type' && (
-            <div className="space-y-4">
-              <input
-                type="text"
-                value={typedSignature}
+            <div className="space-y-3">
+              <input type="text" value={typedSignature}
                 onChange={(e) => setTypedSignature(e.target.value)}
                 placeholder="Type your name"
-                className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
               <div className="space-y-2">
                 <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">Choose style</p>
                 <div className="grid grid-cols-3 gap-2">
                   {SIGNATURE_FONTS.map((font) => (
-                    <button
-                      key={font.name}
-                      onClick={() => setSelectedFont(font)}
+                    <button key={font.name} onClick={() => setSelectedFont(font)}
                       className={cn(
                         'px-3 py-3 border rounded-xl text-center transition-all',
-                        selectedFont.name === font.name
-                          ? 'border-blue-500 bg-blue-50'
-                          : 'border-gray-200 hover:border-gray-300'
-                      )}
-                    >
-                      <span style={{ fontFamily: font.style, fontSize: 20 }}>
+                        selectedFont.name === font.name ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+                      )}>
+                      <span style={{ fontFamily: font.style, fontSize: 20, color: activeColor }}>
                         {typedSignature || 'Sign'}
                       </span>
                     </button>
@@ -236,56 +308,37 @@ export function SignatureModal() {
 
           {signatureMode === 'upload' && (
             <div className="space-y-3">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                onChange={handleFileUpload}
-                className="hidden"
-              />
+              <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
               {uploadedImage ? (
                 <div className="space-y-3">
-                  <div
-                    className="border-2 border-gray-200 rounded-xl overflow-hidden h-48 flex items-center justify-center"
+                  <div className="border-2 border-gray-200 rounded-xl overflow-hidden h-48 flex items-center justify-center"
                     style={{
-                      backgroundImage: bgRemoved
-                        ? 'repeating-conic-gradient(#e5e7eb 0% 25%, #f9fafb 0% 50%) 0 0 / 16px 16px'
-                        : undefined,
+                      backgroundImage: bgRemoved ? 'repeating-conic-gradient(#e5e7eb 0% 25%, #f9fafb 0% 50%) 0 0 / 16px 16px' : undefined,
                       backgroundColor: bgRemoved ? undefined : '#f9fafb',
-                    }}
-                  >
+                    }}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={uploadedImage} alt="Signature" className="max-h-full max-w-full object-contain" />
                   </div>
                   <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => fileInputRef.current?.click()}
-                      className="flex-1 px-3 py-2 text-xs border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors"
-                    >
+                    <button onClick={() => fileInputRef.current?.click()}
+                      className="flex-1 px-3 py-2 text-xs border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors">
                       Change image
                     </button>
-                    <button
-                      onClick={handleRemoveBackground}
-                      disabled={removingBg || bgRemoved}
+                    <button onClick={handleRemoveBackground} disabled={removingBg || bgRemoved}
                       className={cn(
                         'flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg font-medium transition-all',
-                        bgRemoved
-                          ? 'bg-green-50 text-green-600 border border-green-200 cursor-default'
-                          : removingBg
-                          ? 'bg-gray-100 text-gray-400 border border-gray-200 cursor-wait'
+                        bgRemoved ? 'bg-green-50 text-green-600 border border-green-200 cursor-default'
+                          : removingBg ? 'bg-gray-100 text-gray-400 border border-gray-200 cursor-wait'
                           : 'bg-purple-50 text-purple-600 border border-purple-200 hover:bg-purple-100'
-                      )}
-                    >
+                      )}>
                       <Wand2 className="w-3.5 h-3.5" />
                       {bgRemoved ? 'Background removed' : removingBg ? 'Processing…' : 'Remove background'}
                     </button>
                   </div>
                 </div>
               ) : (
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="w-full h-48 border-2 border-dashed border-gray-200 rounded-xl flex flex-col items-center justify-center gap-3 hover:border-blue-300 hover:bg-blue-50/30 transition-all"
-                >
+                <button onClick={() => fileInputRef.current?.click()}
+                  className="w-full h-48 border-2 border-dashed border-gray-200 rounded-xl flex flex-col items-center justify-center gap-3 hover:border-blue-300 hover:bg-blue-50/30 transition-all">
                   <Upload className="w-8 h-8 text-gray-300" />
                   <div className="text-center">
                     <p className="text-sm font-medium text-gray-500">Click to upload</p>
@@ -297,26 +350,19 @@ export function SignatureModal() {
           )}
         </div>
 
-        {/* Footer */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-gray-100 bg-gray-50/50">
-          <button
-            onClick={handleClear}
-            className="flex items-center gap-2 px-4 py-2 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-all"
-          >
+          <button onClick={handleClear}
+            className="flex items-center gap-2 px-4 py-2 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-all">
             <RotateCcw className="w-3.5 h-3.5" />
             Clear
           </button>
           <div className="flex gap-2">
-            <button
-              onClick={handleClose}
-              className="px-4 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded-lg transition-all"
-            >
+            <button onClick={handleClose}
+              className="px-4 py-2 text-sm text-gray-500 hover:bg-gray-100 rounded-lg transition-all">
               Cancel
             </button>
-            <button
-              onClick={handleApply}
-              className="flex items-center gap-2 px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-all"
-            >
+            <button onClick={handleApply}
+              className="flex items-center gap-2 px-5 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-all">
               <Check className="w-3.5 h-3.5" />
               Apply Signature
             </button>

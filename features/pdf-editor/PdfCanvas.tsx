@@ -13,23 +13,15 @@ export function PdfCanvas() {
     addTextField, addDateField, setActiveToolMode,
     pendingSignatureDataUrl, pendingSignatureSize,
     placeSignatureAtPosition, cancelSignaturePlacement,
+    pasteElement,
   } = useStudioStore();
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const [ghostPos, setGhostPos] = useState<{ x: number; y: number } | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; elX: number; elY: number } | null>(null);
 
   const isPlacingSignature = activeToolMode === 'signature' && !!pendingSignatureDataUrl;
-
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!isPlacingSignature || !containerRef.current) return;
-    const rect = containerRef.current.getBoundingClientRect();
-    setGhostPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
-  }, [isPlacingSignature]);
-
-  const handleMouseLeave = useCallback(() => {
-    setGhostPos(null);
-  }, []);
 
   useEffect(() => {
     if (!isPlacingSignature) return;
@@ -38,48 +30,66 @@ export function PdfCanvas() {
     return () => window.removeEventListener('keydown', onKey);
   }, [isPlacingSignature, cancelSignaturePlacement]);
 
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const close = () => setCtxMenu(null);
+    window.addEventListener('click', close);
+    window.addEventListener('contextmenu', close);
+    return () => { window.removeEventListener('click', close); window.removeEventListener('contextmenu', close); };
+  }, [ctxMenu]);
+
   const handleDimensionsChange = useCallback((w: number, h: number) => {
-    setCanvasSize((prev) =>
-      prev.width === w && prev.height === h ? prev : { width: w, height: h }
-    );
+    setCanvasSize((prev) => prev.width === w && prev.height === h ? prev : { width: w, height: h });
   }, []);
 
-  const handleCanvasClick = useCallback(
-    (e: React.MouseEvent) => {
-      if (!containerRef.current) return;
-      const rect = containerRef.current.getBoundingClientRect();
-      const clickX = (e.clientX - rect.left) / scale;
-      const clickY = (e.clientY - rect.top) / scale;
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!isPlacingSignature || !containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    setGhostPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+  }, [isPlacingSignature]);
 
-      if (isPlacingSignature) {
-        placeSignatureAtPosition(currentPage, clickX, clickY);
-        setGhostPos(null);
-        return;
-      }
+  const handleMouseLeave = useCallback(() => { setGhostPos(null); }, []);
 
-      if (activeToolMode === 'select') {
-        if (e.target === containerRef.current || (e.target as HTMLElement).closest('[data-element-overlay]') === null) {
-          setSelectedId(null);
-        }
-        return;
-      }
+  const handleCanvasClick = useCallback((e: React.MouseEvent) => {
+    if (!containerRef.current) return;
+    setCtxMenu(null);
+    const rect = containerRef.current.getBoundingClientRect();
+    const clickX = (e.clientX - rect.left) / scale;
+    const clickY = (e.clientY - rect.top) / scale;
 
-      if (activeToolMode === 'text') {
-        addTextField(currentPage, clickX, clickY);
-        setActiveToolMode('select');
-      } else if (activeToolMode === 'date') {
-        addDateField(currentPage, clickX, clickY);
-        setActiveToolMode('select');
+    if (isPlacingSignature) {
+      placeSignatureAtPosition(currentPage, clickX, clickY);
+      setGhostPos(null);
+      return;
+    }
+
+    if (activeToolMode === 'select') {
+      if (e.target === containerRef.current || (e.target as HTMLElement).closest('[data-element-overlay]') === null) {
+        setSelectedId(null);
       }
-    },
-    [activeToolMode, isPlacingSignature, currentPage, scale, addTextField, addDateField,
-      setSelectedId, setActiveToolMode, placeSignatureAtPosition]
-  );
+      return;
+    }
+
+    if (activeToolMode === 'text') { addTextField(currentPage, clickX, clickY); setActiveToolMode('select'); }
+    else if (activeToolMode === 'date') { addDateField(currentPage, clickX, clickY); setActiveToolMode('select'); }
+  }, [activeToolMode, isPlacingSignature, currentPage, scale, addTextField, addDateField,
+    setSelectedId, setActiveToolMode, placeSignatureAtPosition]);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('[data-element-overlay]')) return;
+    e.preventDefault();
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    setCtxMenu({
+      x: e.clientX, y: e.clientY,
+      elX: (e.clientX - rect.left) / scale,
+      elY: (e.clientY - rect.top) / scale,
+    });
+  }, [scale]);
 
   const pageElements = elements.filter((el) => el.pageIndex === currentPage);
 
-  const cursorClass = isPlacingSignature
-    ? 'cursor-none'
+  const cursorClass = isPlacingSignature ? 'cursor-none'
     : activeToolMode === 'text' ? 'cursor-text'
     : activeToolMode === 'date' ? 'cursor-crosshair'
     : 'cursor-default';
@@ -114,16 +124,14 @@ export function PdfCanvas() {
       )}
 
       <div
+        data-pdf-canvas
         ref={containerRef}
         onClick={handleCanvasClick}
+        onContextMenu={handleContextMenu}
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
         className={cn('relative shadow-2xl bg-white select-none', cursorClass)}
-        style={{
-          width: canvasSize.width > 0 ? canvasSize.width : 'auto',
-          minWidth: 200,
-          minHeight: 300,
-        }}
+        style={{ width: canvasSize.width > 0 ? canvasSize.width : 'auto', minWidth: 200, minHeight: 300 }}
       >
         <PdfPageRenderer
           file={pdfDoc.file}
@@ -140,31 +148,39 @@ export function PdfCanvas() {
           ))}
         </div>
 
-        {/* Ghost signature preview */}
         {isPlacingSignature && pendingSignatureDataUrl && ghostPos && (
-          <div
-            className="absolute pointer-events-none"
-            style={{
-              left: ghostPos.x - ghostW / 2,
-              top: ghostPos.y - ghostH / 2,
-              width: ghostW,
-              height: ghostH,
-              opacity: 0.65,
-              border: '1.5px dashed #3b82f6',
-              borderRadius: 4,
-              boxSizing: 'border-box',
-            }}
-          >
+          <div className="absolute pointer-events-none" style={{
+            left: ghostPos.x - ghostW / 2, top: ghostPos.y - ghostH / 2,
+            width: ghostW, height: ghostH,
+            opacity: 0.65, border: '1.5px dashed #3b82f6', borderRadius: 4, boxSizing: 'border-box',
+          }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={pendingSignatureDataUrl}
-              alt="Signature preview"
+            <img src={pendingSignatureDataUrl} alt="Signature preview"
               style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
-              draggable={false}
-            />
+              draggable={false} />
           </div>
         )}
       </div>
+
+      {ctxMenu && (
+        <div
+          className="fixed z-[200] bg-white border border-gray-200 rounded-xl shadow-xl py-1 min-w-[160px]"
+          style={{ left: ctxMenu.x, top: ctxMenu.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={() => { pasteElement(ctxMenu.elX, ctxMenu.elY); setCtxMenu(null); }}
+            disabled={!useStudioStore.getState().clipboard}
+            className={cn(
+              'w-full flex items-center justify-between px-3 py-1.5 text-sm transition-colors text-gray-700 hover:bg-gray-50',
+              !useStudioStore.getState().clipboard && 'opacity-40 cursor-not-allowed hover:bg-transparent'
+            )}
+          >
+            <span>Paste</span>
+            <span className="text-xs text-gray-400 ml-6">⌘V</span>
+          </button>
+        </div>
+      )}
     </div>
   );
 }

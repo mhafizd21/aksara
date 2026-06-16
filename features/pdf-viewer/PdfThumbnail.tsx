@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
+import { useStudioStore } from '@/stores/studio.store';
 
 interface PdfThumbnailProps {
   file: File;
@@ -13,6 +14,12 @@ interface PdfThumbnailProps {
 export function PdfThumbnail({ file, pageIndex, isActive, onClick }: PdfThumbnailProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [ready, setReady] = useState(false);
+  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
+  const [pageDims, setPageDims] = useState<{ width: number; height: number } | null>(null);
+
+  const allElements = useStudioStore((s) => s.elements);
+  const scale = useStudioStore((s) => s.scale);
+  const elements = allElements.filter((el) => el.pageIndex === pageIndex);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -33,15 +40,29 @@ export function PdfThumbnail({ file, pageIndex, isActive, onClick }: PdfThumbnai
         const page = await pdf.getPage(pageIndex + 1);
         if (cancelled) return;
 
-        const viewport = page.getViewport({ scale: 0.2 });
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
+        const THUMB_SCALE = 0.2;
+        const viewport = page.getViewport({ scale: THUMB_SCALE });
+        const dpr = window.devicePixelRatio || 1;
+
+        canvas.width = Math.floor(viewport.width * dpr);
+        canvas.height = Math.floor(viewport.height * dpr);
+        canvas.style.width = `${viewport.width}px`;
+        canvas.style.height = `${viewport.height}px`;
+
+        setCanvasSize({ width: viewport.width, height: viewport.height });
 
         const ctx = canvas.getContext('2d');
         if (!ctx || cancelled) return;
 
+        ctx.scale(dpr, dpr);
         await page.render({ canvas, canvasContext: ctx, viewport }).promise;
-        if (!cancelled) setReady(true);
+
+        // Get full page dims for overlay calculation
+        const fullViewport = page.getViewport({ scale: 1 });
+        if (!cancelled) {
+          setPageDims({ width: fullViewport.width, height: fullViewport.height });
+          setReady(true);
+        }
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         if (!msg.includes('cancel')) console.warn('[Thumbnail]', msg);
@@ -73,7 +94,30 @@ export function PdfThumbnail({ file, pageIndex, isActive, onClick }: PdfThumbnai
             <div className="w-3 h-3 rounded-full border-2 border-gray-300 border-t-blue-400 animate-spin" />
           </div>
         )}
+
+        {ready && canvasSize.width > 0 && pageDims && elements.map((el) => {
+          const scaleRatio = canvasSize.width / (pageDims.width * scale);
+          const left = el.position.x * scale * scaleRatio;
+          const top = el.position.y * scale * scaleRatio;
+          const width = el.size.width * scale * scaleRatio;
+          const height = el.size.height * scale * scaleRatio;
+
+          return (
+            <div
+              key={el.id}
+              className="absolute pointer-events-none"
+              style={{
+                left, top, width, height,
+                border: '1.5px solid',
+                borderColor: el.type === 'signature' ? '#3b82f6' : '#10b981',
+                borderRadius: 2,
+                backgroundColor: el.type === 'signature' ? 'rgba(59,130,246,0.10)' : 'rgba(16,185,129,0.10)',
+              }}
+            />
+          );
+        })}
       </div>
+
       <span className={cn(
         'text-xs font-medium',
         isActive ? 'text-blue-600' : 'text-gray-500 group-hover:text-gray-700'
