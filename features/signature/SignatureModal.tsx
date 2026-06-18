@@ -39,8 +39,7 @@ async function removeBackground(dataUrl: string, tolerance = 30): Promise<string
     const img = new Image();
     img.onload = () => {
       const canvas = document.createElement('canvas');
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
+      canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
       const ctx = canvas.getContext('2d')!;
       ctx.drawImage(img, 0, 0);
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -62,8 +61,7 @@ async function recolorSignature(dataUrl: string, hexColor: string): Promise<stri
     const img = new Image();
     img.onload = () => {
       const canvas = document.createElement('canvas');
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
+      canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
       const ctx = canvas.getContext('2d')!;
       ctx.drawImage(img, 0, 0);
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -82,7 +80,8 @@ async function recolorSignature(dataUrl: string, hexColor: string): Promise<stri
   });
 }
 
-// ── Native DPR-aware draw canvas ─────────────────────────────────────────────
+interface Point { x: number; y: number; t: number; }
+
 interface DrawCanvasProps {
   color: string;
   onDrawn: (isEmpty: boolean) => void;
@@ -92,17 +91,15 @@ interface DrawCanvasProps {
 function DrawCanvas({ color, onDrawn, canvasRef }: DrawCanvasProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const isDrawing = useRef(false);
-  const lastPos = useRef<{ x: number; y: number } | null>(null);
+  const points = useRef<Point[]>([]);
 
-  // Init canvas with correct DPR sizing on mount
   useEffect(() => {
     const canvas = canvasRef.current;
     const wrapper = wrapperRef.current;
     if (!canvas || !wrapper) return;
 
     const dpr = window.devicePixelRatio || 1;
-    const rect = wrapper.getBoundingClientRect();
-    const cssW = rect.width || 464;
+    const cssW = wrapper.getBoundingClientRect().width || 464;
     const cssH = 200;
 
     canvas.width = Math.floor(cssW * dpr);
@@ -114,76 +111,111 @@ function DrawCanvas({ color, onDrawn, canvasRef }: DrawCanvasProps) {
     ctx.scale(dpr, dpr);
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    ctx.lineWidth = 2.5;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
     ctx.strokeStyle = color;
+    ctx.fillStyle = color;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Update color without clearing
   useEffect(() => {
     const ctx = canvasRef.current?.getContext('2d');
-    if (ctx) ctx.strokeStyle = color;
+    if (ctx) { ctx.strokeStyle = color; ctx.fillStyle = color; }
   }, [color, canvasRef]);
 
-  const getPos = (e: MouseEvent | TouchEvent): { x: number; y: number } | null => {
-    const canvas = canvasRef.current;
-    if (!canvas) return null;
-    const rect = canvas.getBoundingClientRect();
-    if (e instanceof MouseEvent) return { x: e.clientX - rect.left, y: e.clientY - rect.top };
-    if (e instanceof TouchEvent && e.touches.length > 0) return { x: e.touches[0].clientX - rect.left, y: e.touches[0].clientY - rect.top };
-    return null;
+  const getPos = (clientX: number, clientY: number): { x: number; y: number } => {
+    const rect = canvasRef.current!.getBoundingClientRect();
+    return { x: clientX - rect.left, y: clientY - rect.top };
   };
 
-  const startDraw = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+  const drawSmooth = useCallback((pts: Point[]) => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas || pts.length < 2) return;
+    const ctx = canvas.getContext('2d')!;
+
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.imageSmoothingEnabled = true;
+
+    const n = pts.length;
+
+    if (n === 2) {
+      const dt = Math.max(pts[1].t - pts[0].t, 1);
+      const speed = Math.sqrt((pts[1].x - pts[0].x) ** 2 + (pts[1].y - pts[0].y) ** 2) / dt;
+      ctx.lineWidth = Math.max(1, Math.min(3.5, 3.5 - speed * 0.01));
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x, pts[0].y);
+      ctx.lineTo(pts[1].x, pts[1].y);
+      ctx.stroke();
+      return;
+    }
+
+    const p0 = pts[Math.max(0, n - 4)];
+    const p1 = pts[Math.max(0, n - 3)];
+    const p2 = pts[n - 2];
+    const p3 = pts[n - 1];
+
+    const dt = Math.max(p3.t - p1.t, 1);
+    const dist = Math.sqrt((p3.x - p1.x) ** 2 + (p3.y - p1.y) ** 2);
+    const speed = dist / dt;
+    ctx.lineWidth = Math.max(1, Math.min(3.5, 3.5 - speed * 0.008));
+
+    // Catmull-Rom → cubic Bezier
+    const cp1x = p1.x + (p2.x - p0.x) / 6;
+    const cp1y = p1.y + (p2.y - p0.y) / 6;
+    const cp2x = p2.x - (p3.x - p1.x) / 6;
+    const cp2y = p2.y - (p3.y - p1.y) / 6;
+
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y);
+    ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
+    ctx.stroke();
+  }, [color, canvasRef]);
+
+  const startDraw = useCallback((e: React.MouseEvent | React.TouchEvent) => {
     e.preventDefault();
     isDrawing.current = true;
+    points.current = [];
 
-    const pos = getPos(e.nativeEvent as MouseEvent | TouchEvent);
-    if (!pos) return;
-    lastPos.current = pos;
+    const raw = 'touches' in e ? e.touches[0] : e.nativeEvent as MouseEvent;
+    const pos = getPos(raw.clientX, raw.clientY);
+    points.current.push({ ...pos, t: Date.now() });
 
-    // Dot on click
-    const ctx = canvas.getContext('2d')!;
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.arc(pos.x, pos.y, 1.25, 0, Math.PI * 2);
-    ctx.fill();
+    const ctx = canvasRef.current?.getContext('2d');
+    if (ctx) {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
     onDrawn(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [color, onDrawn]);
 
-  const draw = useCallback((e: MouseEvent | TouchEvent) => {
-    if (!isDrawing.current) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+  const continueDraw = useCallback((e: MouseEvent | TouchEvent) => {
+    if (!isDrawing.current || !canvasRef.current) return;
     e.preventDefault();
 
-    const pos = getPos(e);
-    if (!pos || !lastPos.current) return;
+    const raw = 'touches' in e ? e.touches[0] : e as MouseEvent;
+    const pos = getPos(raw.clientX, raw.clientY);
 
-    const ctx = canvas.getContext('2d')!;
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2.5;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.beginPath();
-    ctx.moveTo(lastPos.current.x, lastPos.current.y);
-    ctx.lineTo(pos.x, pos.y);
-    ctx.stroke();
+    const last = points.current[points.current.length - 1];
+    const d = Math.sqrt((pos.x - last.x) ** 2 + (pos.y - last.y) ** 2);
+    if (d < 1) return;
 
-    lastPos.current = pos;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [color]);
+    points.current.push({ ...pos, t: Date.now() });
+    drawSmooth(points.current);
+  }, [canvasRef, drawSmooth]);
 
   const stopDraw = useCallback(() => {
     isDrawing.current = false;
-    lastPos.current = null;
+    points.current = [];
   }, []);
 
   useEffect(() => {
-    const onMove = (e: MouseEvent | TouchEvent) => draw(e);
+    const onMove = (e: MouseEvent | TouchEvent) => continueDraw(e);
     const onUp = () => stopDraw();
     window.addEventListener('mousemove', onMove, { passive: false });
     window.addEventListener('mouseup', onUp);
@@ -195,7 +227,7 @@ function DrawCanvas({ color, onDrawn, canvasRef }: DrawCanvasProps) {
       window.removeEventListener('touchmove', onMove);
       window.removeEventListener('touchend', onUp);
     };
-  }, [draw, stopDraw]);
+  }, [continueDraw, stopDraw]);
 
   return (
     <div ref={wrapperRef} className="w-full" style={{ touchAction: 'none' }}>
@@ -203,14 +235,11 @@ function DrawCanvas({ color, onDrawn, canvasRef }: DrawCanvasProps) {
         ref={canvasRef as React.RefObject<HTMLCanvasElement>}
         onMouseDown={startDraw}
         onTouchStart={startDraw}
-        className="w-full block"
-        style={{ cursor: 'crosshair', display: 'block', touchAction: 'none' }}
+        style={{ cursor: 'crosshair', display: 'block', width: '100%', touchAction: 'none' }}
       />
     </div>
   );
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
 
 export function SignatureModal() {
   const { isSignatureModalOpen, setSignatureModalOpen, signatureMode, setSignatureMode, readySignatureForPlacement } = useStudioStore();
@@ -311,8 +340,8 @@ export function SignatureModal() {
       <div className="relative w-full max-w-lg mx-4 overflow-hidden"
         style={{ background: 'var(--color-background)', borderRadius: 'var(--radius-modal)', boxShadow: '0 20px 60px -10px rgba(0,0,0,0.25)', border: '1px solid var(--color-border)' }}>
 
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: '1px solid var(--color-border)' }}>
+        <div className="flex items-center justify-between px-6 py-4"
+          style={{ borderBottom: '1px solid var(--color-border)' }}>
           <div>
             <h2 className="text-base font-semibold" style={{ color: 'var(--color-text-primary)' }}>Create Signature</h2>
             <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-secondary)' }}>Draw, type, or upload your signature</p>
@@ -325,7 +354,6 @@ export function SignatureModal() {
           </button>
         </div>
 
-        {/* Tabs */}
         <div className="flex px-6 pt-4 gap-1">
           {tabs.map((tab) => (
             <button key={tab.id} onClick={() => { setSignatureMode(tab.id); handleClear(); }}
@@ -337,7 +365,6 @@ export function SignatureModal() {
         </div>
 
         <div className="px-6 py-4 space-y-4">
-          {/* Color picker */}
           {showColorPicker && (
             <div className="flex items-center gap-3">
               <span className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>Color</span>
@@ -360,14 +387,13 @@ export function SignatureModal() {
             </div>
           )}
 
-          {/* Draw */}
           {signatureMode === 'draw' && (
             <div>
               <div className="overflow-hidden relative"
-                style={{ border: '1.5px dashed var(--color-border)', borderRadius: 12, background: 'var(--color-surface)' }}>
+                style={{ border: '1.5px dashed var(--color-border)', borderRadius: 12, background: '#fff' }}>
                 <DrawCanvas color={activeColor} onDrawn={(empty) => setIsEmpty(empty)} canvasRef={drawCanvasRef} />
                 {isEmpty && (
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none">
                     <span className="text-sm" style={{ color: 'var(--color-text-disabled)' }}>Sign here</span>
                   </div>
                 )}
@@ -376,7 +402,6 @@ export function SignatureModal() {
             </div>
           )}
 
-          {/* Type */}
           {signatureMode === 'type' && (
             <div className="space-y-3">
               <input type="text" value={typedSignature} onChange={(e) => setTypedSignature(e.target.value)}
@@ -396,7 +421,6 @@ export function SignatureModal() {
             </div>
           )}
 
-          {/* Upload */}
           {signatureMode === 'upload' && (
             <div className="space-y-3">
               <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
@@ -444,7 +468,6 @@ export function SignatureModal() {
           )}
         </div>
 
-        {/* Footer */}
         <div className="flex items-center justify-between px-6 py-4"
           style={{ borderTop: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
           <button onClick={handleClear}

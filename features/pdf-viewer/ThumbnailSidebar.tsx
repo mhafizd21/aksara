@@ -14,7 +14,7 @@ export function ThumbnailSidebar() {
   }, [currentPage]);
 
   return (
-    <aside className="w-[120px] shrink-0 flex-col overflow-hidden hidden sm:flex"
+    <aside className="w-45 shrink-0 flex-col overflow-hidden hidden sm:flex"
       style={{ background: 'var(--color-surface)', borderRight: '1px solid var(--color-border)' }}>
       <div className="px-3 py-2.5 shrink-0" style={{ borderBottom: '1px solid var(--color-border)' }}>
         <p className="label">Pages</p>

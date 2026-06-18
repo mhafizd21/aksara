@@ -149,7 +149,7 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
 
       {/* Context menu */}
       {ctxMenu && (
-        <div className="fixed z-[200] py-1 min-w-[180px]"
+        <div className="fixed z-200 py-1 min-w-45"
           style={{ left: ctxMenu.x, top: ctxMenu.y, background: 'var(--color-background)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-dropdown)', boxShadow: 'var(--shadow-md)' }}
           onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
           {ctxItems.map(({ label, shortcut, icon: Icon, onClick, disabled }) => (
