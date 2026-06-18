@@ -2,14 +2,14 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'PDF Studio — Sign & Edit PDFs',
-  description: 'Upload, sign, annotate, and download PDFs with ease.',
+  title: 'Aksara — Modern Document Workspace',
+  description: 'Sign, annotate, and manage documents with precision.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body style={{ fontFamily: 'system-ui, -apple-system, sans-serif' }}>{children}</body>
+      <body>{children}</body>
     </html>
   );
 }

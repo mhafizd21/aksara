@@ -15,7 +15,10 @@ export default function StudioPage() {
   const { document: pdfDoc } = useStudioStore();
 
   return (
-    <div className="flex flex-col h-screen bg-white overflow-hidden">
+    <div
+      className="flex flex-col h-screen overflow-hidden"
+      style={{ background: 'var(--color-background)', fontFamily: 'var(--font-family)' }}
+    >
       <Toolbar />
       <div className="flex flex-1 overflow-hidden">
         <ThumbnailSidebar />

@@ -2,7 +2,6 @@
 
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { Trash2, Copy, Scissors, Clipboard, GripHorizontal } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import type { PdfElement } from '@/types';
 import { useStudioStore } from '@/stores/studio.store';
 
@@ -34,7 +33,6 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
     setSelectedId(element.id);
     didMoveRef.current = false;
     dragStartRef.current = { mouseX: e.clientX, mouseY: e.clientY, elX: element.position.x, elY: element.position.y };
-
     const onMove = (ev: MouseEvent) => {
       if (!dragStartRef.current) return;
       if (!didMoveRef.current && Math.abs(ev.clientX - dragStartRef.current.mouseX) < 2 && Math.abs(ev.clientY - dragStartRef.current.mouseY) < 2) return;
@@ -84,123 +82,112 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
   const w = element.size.width * scale;
   const h = element.size.height * scale;
 
-  const renderContent = () => {
-    if (element.type === 'signature') {
-      return (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={element.dataUrl} alt="Signature"
-          className="w-full h-full object-contain pointer-events-none select-none" draggable={false} />
-      );
-    }
-    if (element.type === 'text' || element.type === 'date') {
-      return (
-        <div className="w-full h-full flex items-center px-2 overflow-hidden pointer-events-none select-none"
-          style={{ fontSize: element.fontSize * scale, fontFamily: element.fontFamily, color: element.color, whiteSpace: 'nowrap' }}>
-          {element.content}
-        </div>
-      );
-    }
-    return null;
+  const handlePos: Record<ResizeHandle, React.CSSProperties> = {
+    se: { bottom: -5, right: -5, cursor: 'se-resize' },
+    sw: { bottom: -5, left: -5, cursor: 'sw-resize' },
+    ne: { top: -5, right: -5, cursor: 'ne-resize' },
+    nw: { top: -5, left: -5, cursor: 'nw-resize' },
+    e:  { top: '50%', right: -5, cursor: 'e-resize', transform: 'translateY(-50%)' },
+    w:  { top: '50%', left: -5, cursor: 'w-resize', transform: 'translateY(-50%)' },
+    n:  { top: -5, left: '50%', cursor: 'n-resize', transform: 'translateX(-50%)' },
+    s:  { bottom: -5, left: '50%', cursor: 's-resize', transform: 'translateX(-50%)' },
   };
 
-  const handles: ResizeHandle[] = ['se', 'sw', 'ne', 'nw', 'e', 'w', 'n', 's'];
-  const handlePositions: Record<ResizeHandle, { top?: string; left?: string; bottom?: string; right?: string; cursor: string }> = {
-    se: { bottom: '-5px', right: '-5px', cursor: 'se-resize' },
-    sw: { bottom: '-5px', left: '-5px', cursor: 'sw-resize' },
-    ne: { top: '-5px', right: '-5px', cursor: 'ne-resize' },
-    nw: { top: '-5px', left: '-5px', cursor: 'nw-resize' },
-    e: { top: '50%', right: '-5px', cursor: 'e-resize' },
-    w: { top: '50%', left: '-5px', cursor: 'w-resize' },
-    n: { top: '-5px', left: '50%', cursor: 'n-resize' },
-    s: { bottom: '-5px', left: '50%', cursor: 's-resize' },
-  };
+  const ctxItems = [
+    { label: 'Copy', shortcut: '⌘C', icon: Copy, onClick: () => { copyElement(element.id); setCtxMenu(null); } },
+    { label: 'Cut', shortcut: '⌘X', icon: Scissors, onClick: () => { cutElement(element.id); setCtxMenu(null); } },
+    { label: 'Paste', shortcut: '⌘V', icon: Clipboard, disabled: !clipboard, onClick: () => { pasteElement(element.position.x + element.size.width + 10, element.position.y); setCtxMenu(null); } },
+    { label: 'Duplicate', shortcut: '⌘D', icon: Clipboard, onClick: () => { duplicateElement(element.id); setCtxMenu(null); } },
+  ];
 
   return (
     <>
-      <div
-        onMouseDown={handleMouseDown}
-        onContextMenu={handleContextMenu}
-        className={cn('absolute group', isDragging ? 'cursor-grabbing' : 'cursor-grab')}
-        style={{ left: x, top: y, width: w, height: h }}
-      >
-        {renderContent()}
+      <div onMouseDown={handleMouseDown} onContextMenu={handleContextMenu}
+        className="absolute group"
+        style={{ left: x, top: y, width: w, height: h, cursor: isDragging ? 'grabbing' : 'grab' }}>
 
-        <div className={cn(
-          'absolute inset-0 rounded transition-all pointer-events-none',
-          isSelected ? 'ring-2 ring-blue-500 ring-offset-0' : 'ring-1 ring-blue-300/0 group-hover:ring-blue-300'
-        )} />
-
-        {isSelected && (
-          <div className="absolute -top-9 left-0 flex items-center gap-1 bg-white border border-gray-200 rounded-lg shadow-lg px-1.5 py-1 z-50"
-            onMouseDown={(e) => e.stopPropagation()}>
-            <GripHorizontal className="w-3.5 h-3.5 text-gray-400" />
-            <div className="w-px h-3.5 bg-gray-200" />
-            <ToolbarBtn icon={Copy} title="Copy (⌘C)" onClick={() => copyElement(element.id)} />
-            <ToolbarBtn icon={Scissors} title="Cut (⌘X)" onClick={() => cutElement(element.id)} />
-            <ToolbarBtn icon={Clipboard} title="Duplicate (⌘D)" onClick={() => duplicateElement(element.id)} />
-            <div className="w-px h-3.5 bg-gray-200" />
-            <ToolbarBtn icon={Trash2} title="Delete" danger onClick={() => deleteElement(element.id)} />
+        {element.type === 'signature' && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={element.dataUrl} alt="Signature"
+            className="w-full h-full object-contain pointer-events-none select-none" draggable={false} />
+        )}
+        {(element.type === 'text' || element.type === 'date') && (
+          <div className="w-full h-full flex items-center px-2 overflow-hidden pointer-events-none select-none"
+            style={{ fontSize: element.fontSize * scale, fontFamily: element.fontFamily, color: element.color, whiteSpace: 'nowrap' }}>
+            {element.content}
           </div>
         )}
 
-        {isSelected && handles.map((handle) => {
-          const pos = handlePositions[handle];
-          return (
-            <div key={handle} data-handle={handle} onMouseDown={handleResizeDispatch}
-              className="absolute w-2.5 h-2.5 bg-white border-2 border-blue-500 rounded-sm z-50"
-              style={{
-                top: pos.top, left: pos.left, bottom: pos.bottom, right: pos.right, cursor: pos.cursor,
-                transform: handle === 'e' || handle === 'w' ? 'translateY(-50%)' : handle === 'n' || handle === 's' ? 'translateX(-50%)' : undefined,
-              }} />
-          );
-        })}
+        {/* Border ring */}
+        <div className="absolute inset-0 rounded pointer-events-none"
+          style={{ outline: isSelected ? '2px solid var(--color-primary)' : '1.5px solid transparent', outlineOffset: 0 }} />
+        <div className="absolute inset-0 rounded pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"
+          style={{ outline: isSelected ? 'none' : '1.5px solid var(--color-primary)', outlineOffset: 0 }} />
+
+        {/* Toolbar */}
+        {isSelected && (
+          <div className="absolute -top-9 left-0 flex items-center gap-1 px-1.5 py-1 z-50"
+            style={{ background: 'var(--color-background)', border: '1px solid var(--color-border)', borderRadius: 8, boxShadow: 'var(--shadow-md)' }}
+            onMouseDown={(e) => e.stopPropagation()}>
+            <GripHorizontal className="w-3.5 h-3.5" style={{ color: 'var(--color-text-disabled)' }} />
+            <div className="w-px h-3.5" style={{ background: 'var(--color-border)' }} />
+            <FBtn icon={Copy} title="Copy (⌘C)" onClick={() => copyElement(element.id)} />
+            <FBtn icon={Scissors} title="Cut (⌘X)" onClick={() => cutElement(element.id)} />
+            <FBtn icon={Clipboard} title="Duplicate (⌘D)" onClick={() => duplicateElement(element.id)} />
+            <div className="w-px h-3.5" style={{ background: 'var(--color-border)' }} />
+            <FBtn icon={Trash2} title="Delete" onClick={() => deleteElement(element.id)} danger />
+          </div>
+        )}
+
+        {/* Resize handles */}
+        {isSelected && (Object.keys(handlePos) as ResizeHandle[]).map((handle) => (
+          <div key={handle} data-handle={handle} onMouseDown={handleResizeDispatch}
+            className="absolute w-2.5 h-2.5 z-50"
+            style={{ ...handlePos[handle], background: '#fff', border: '2px solid var(--color-primary)', borderRadius: 3 }} />
+        ))}
       </div>
 
+      {/* Context menu */}
       {ctxMenu && (
-        <div
-          className="fixed z-[200] bg-white border border-gray-200 rounded-xl shadow-xl py-1 min-w-[180px]"
-          style={{ left: ctxMenu.x, top: ctxMenu.y }}
-          onClick={(e) => e.stopPropagation()}
-          onMouseDown={(e) => e.stopPropagation()}
-        >
-          <CtxItem label="Copy" shortcut="⌘C" icon={Copy} onClick={() => { copyElement(element.id); setCtxMenu(null); }} />
-          <CtxItem label="Cut" shortcut="⌘X" icon={Scissors} onClick={() => { cutElement(element.id); setCtxMenu(null); }} />
-          <CtxItem label="Paste" shortcut="⌘V" icon={Clipboard} disabled={!clipboard}
-            onClick={() => { pasteElement(element.position.x + element.size.width + 10, element.position.y); setCtxMenu(null); }} />
-          <CtxItem label="Duplicate" shortcut="⌘D" icon={Clipboard} onClick={() => { duplicateElement(element.id); setCtxMenu(null); }} />
-          <div className="my-1 border-t border-gray-100" />
-          <CtxItem label="Delete" icon={Trash2} danger onClick={() => { deleteElement(element.id); setCtxMenu(null); }} />
+        <div className="fixed z-[200] py-1 min-w-[180px]"
+          style={{ left: ctxMenu.x, top: ctxMenu.y, background: 'var(--color-background)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-dropdown)', boxShadow: 'var(--shadow-md)' }}
+          onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+          {ctxItems.map(({ label, shortcut, icon: Icon, onClick, disabled }) => (
+            <button key={label} onClick={onClick} disabled={disabled}
+              className="w-full flex items-center gap-2.5 px-3 py-1.5 text-sm transition-colors"
+              style={{ color: 'var(--color-text-primary)', opacity: disabled ? 0.4 : 1, cursor: disabled ? 'not-allowed' : 'pointer' }}
+              onMouseEnter={(e) => { if (!disabled) (e.currentTarget as HTMLElement).style.background = 'var(--color-surface)'; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
+              <Icon className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--color-text-secondary)' }} />
+              <span className="flex-1 text-left">{label}</span>
+              <span className="text-xs" style={{ color: 'var(--color-text-disabled)' }}>{shortcut}</span>
+            </button>
+          ))}
+          <div className="my-1" style={{ height: 1, background: 'var(--color-border)' }} />
+          <button onClick={() => { deleteElement(element.id); setCtxMenu(null); }}
+            className="w-full flex items-center gap-2.5 px-3 py-1.5 text-sm transition-colors"
+            style={{ color: 'var(--color-danger)', cursor: 'pointer' }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = '#FEF2F2'; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
+            <Trash2 className="w-3.5 h-3.5 shrink-0" />
+            <span>Delete</span>
+          </button>
         </div>
       )}
     </>
   );
 }
 
-function ToolbarBtn({ icon: Icon, title, onClick, danger }: {
-  icon: React.ComponentType<{ className?: string }>; title: string; onClick: () => void; danger?: boolean;
+function FBtn({ icon: Icon, title, onClick, danger }: {
+  icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
+  title: string; onClick: () => void; danger?: boolean;
 }) {
   return (
-    <button onClick={(e) => { e.stopPropagation(); onClick(); }}
-      className={cn('p-1 rounded transition-colors', danger ? 'hover:bg-red-50' : 'hover:bg-gray-100')}
-      title={title}>
-      <Icon className={cn('w-3.5 h-3.5', danger ? 'text-red-500' : 'text-gray-600')} />
-    </button>
-  );
-}
-
-function CtxItem({ label, shortcut, icon: Icon, onClick, disabled, danger }: {
-  label: string; shortcut?: string; icon: React.ComponentType<{ className?: string }>; onClick: () => void; disabled?: boolean; danger?: boolean;
-}) {
-  return (
-    <button onClick={onClick} disabled={disabled}
-      className={cn(
-        'w-full flex items-center gap-2.5 px-3 py-1.5 text-sm transition-colors',
-        danger ? 'text-red-600 hover:bg-red-50' : 'text-gray-700 hover:bg-gray-50',
-        disabled && 'opacity-40 cursor-not-allowed hover:bg-transparent',
-      )}>
-      <Icon className="w-3.5 h-3.5 shrink-0" />
-      <span className="flex-1 text-left">{label}</span>
-      {shortcut && <span className="text-xs text-gray-400">{shortcut}</span>}
+    <button onClick={(e) => { e.stopPropagation(); onClick(); }} title={title}
+      className="p-1 rounded transition-colors"
+      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = danger ? '#FEF2F2' : 'var(--color-surface)'; }}
+      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
+      <Icon className="w-3.5 h-3.5" style={{ color: danger ? 'var(--color-danger)' : 'var(--color-text-secondary)' }} />
     </button>
   );
 }

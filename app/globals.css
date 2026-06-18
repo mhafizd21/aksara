@@ -1,34 +1,115 @@
-/* Signature fonts — must precede @import "tailwindcss" */
+/* ── Signature fonts ── */
 @import url('https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600&family=Great+Vibes&family=Pacifico&display=swap');
+/* ── UI font ── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
 @import "tailwindcss";
 
-* {
-  box-sizing: border-box;
+/* ── Design Tokens ── */
+:root {
+  --color-primary:       #4338CA;
+  --color-primary-hover: #3730A3;
+  --color-secondary:     #334155;
+  --color-accent:        #06B6D4;
+
+  --color-success: #16A34A;
+  --color-warning: #F59E0B;
+  --color-danger:  #DC2626;
+
+  --color-background:    #FFFFFF;
+  --color-surface:       #F8FAFC;
+  --color-border:        #E2E8F0;
+  --color-border-subtle: #F1F5F9;
+
+  --color-text-primary:   #0F172A;
+  --color-text-secondary: #64748B;
+  --color-text-disabled:  #94A3B8;
+
+  --radius-button:   8px;
+  --radius-card:     12px;
+  --radius-modal:    16px;
+  --radius-input:    8px;
+  --radius-dropdown: 12px;
+
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.07), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+
+  --font-family: 'Inter', system-ui, -apple-system, sans-serif;
 }
+
+*, *::before, *::after { box-sizing: border-box; }
 
 html, body {
   height: 100%;
   overflow: hidden;
+  font-family: var(--font-family);
+  font-size: 13px;
+  color: var(--color-text-primary);
+  background: var(--color-background);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: #d1d5db;
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af;
-}
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-text-disabled); }
 
 canvas {
   image-rendering: -webkit-optimize-contrast;
   image-rendering: crisp-edges;
 }
+
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-button);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: var(--radius-button);
+  transition: all 0.15s ease;
+  cursor: pointer;
+  border: none;
+  white-space: nowrap;
+}
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-primary { background: var(--color-primary); color: #fff; box-shadow: var(--shadow-sm); }
+.btn-primary:hover:not(:disabled) { background: var(--color-primary-hover); }
+.btn-secondary { background: var(--color-surface); color: var(--color-text-primary); border: 1px solid var(--color-border); }
+.btn-secondary:hover:not(:disabled) { background: var(--color-border-subtle); }
+.btn-ghost { background: transparent; color: var(--color-text-secondary); }
+.btn-ghost:hover:not(:disabled) { background: var(--color-surface); color: var(--color-text-primary); }
+.btn-danger { background: transparent; color: var(--color-danger); }
+.btn-danger:hover:not(:disabled) { background: #FEF2F2; }
+
+.input {
+  width: 100%;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-family: var(--font-family);
+  color: var(--color-text-primary);
+  background: var(--color-background);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-input);
+  transition: border-color 0.15s, box-shadow 0.15s;
+  outline: none;
+}
+.input:focus { border-color: var(--color-primary); box-shadow: 0 0 0 3px rgb(67 56 202 / 0.1); }
+.input::placeholder { color: var(--color-text-disabled); }
+
+.label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+
+.divider { height: 1px; background: var(--color-border); }

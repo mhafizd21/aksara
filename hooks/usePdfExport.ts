@@ -20,37 +20,50 @@ export function usePdfExport() {
       const processElement = async (el: PdfElement) => {
         const page = pages[el.pageIndex];
         if (!page) return;
-        const { height: pageHeight } = page.getSize();
-        const pageInfo = pdfDoc.pages[el.pageIndex];
-        const scaleX = page.getWidth() / (pageInfo.width * scale);
-        const scaleY = pageHeight / (pageInfo.height * scale);
 
-        const x = el.position.x * scaleX;
-        const y = pageHeight - (el.position.y * scaleY) - (el.size.height * scaleY);
-        const w = el.size.width * scaleX;
-        const h = el.size.height * scaleY;
+        const { width: pdfW, height: pdfH } = page.getSize();
+        const pageInfo = pdfDoc.pages[el.pageIndex];
+
+        // el.position / el.size are stored in scaled canvas pixels
+        // Convert: scaled px → unscaled PDF units → pdf-lib points
+        const pdfX      = (el.position.x / scale) * (pdfW / pageInfo.width);
+        const pdfYTop   = (el.position.y / scale) * (pdfH / pageInfo.height);
+        const pdfElW    = (el.size.width  / scale) * (pdfW / pageInfo.width);
+        const pdfElH    = (el.size.height / scale) * (pdfH / pageInfo.height);
+
+        // pdf-lib origin is bottom-left; flip Y
+        const pdfY = pdfH - pdfYTop - pdfElH;
 
         if (el.type === 'signature') {
           const sigEl = el as SignatureElement;
           try {
             const bytes = dataUrlToUint8Array(sigEl.dataUrl);
-            const mediaType = sigEl.dataUrl.startsWith('data:image/png') ? 'png' : 'jpeg';
-            const image = mediaType === 'png' ? await doc.embedPng(bytes) : await doc.embedJpg(bytes);
-            page.drawImage(image, { x, y, width: w, height: h });
-          } catch { /* skip */ }
+            const isPng = sigEl.dataUrl.startsWith('data:image/png');
+            const image = isPng ? await doc.embedPng(bytes) : await doc.embedJpg(bytes);
+            page.drawImage(image, { x: pdfX, y: pdfY, width: pdfElW, height: pdfElH });
+          } catch { /* skip corrupt */ }
         } else if (el.type === 'text' || el.type === 'date') {
           const textEl = el as TextField | DateField;
           const font = await doc.embedFont(StandardFonts.Helvetica);
+
           const hexToRgb = (hex: string) => {
-            const r = parseInt(hex.slice(1, 3), 16) / 255;
-            const g = parseInt(hex.slice(3, 5), 16) / 255;
-            const b = parseInt(hex.slice(5, 7), 16) / 255;
-            return rgb(r, g, b);
+            const c = hex.replace('#', '');
+            return rgb(
+              parseInt(c.slice(0, 2), 16) / 255,
+              parseInt(c.slice(2, 4), 16) / 255,
+              parseInt(c.slice(4, 6), 16) / 255,
+            );
           };
+
+          const pdfFontSize = (textEl.fontSize / scale) * (pdfW / pageInfo.width);
+          const textY = pdfY + (pdfElH - pdfFontSize) / 2;
+
           page.drawText(textEl.content, {
-            x, y: y + h / 2,
-            size: textEl.fontSize * Math.min(scaleX, scaleY),
-            font, color: hexToRgb(textEl.color),
+            x: pdfX,
+            y: textY,
+            size: pdfFontSize,
+            font,
+            color: hexToRgb(textEl.color),
           });
         }
       };

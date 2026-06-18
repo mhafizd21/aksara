@@ -53,77 +53,102 @@ export function Toolbar() {
 
   return (
     <>
-      <header className="h-14 bg-white border-b border-gray-100 flex items-center px-3 gap-1.5 shrink-0 z-40">
-        <div className="flex items-center gap-2 mr-2 shrink-0">
-          <div className="w-7 h-7 bg-blue-600 rounded-lg flex items-center justify-center shrink-0">
+      <header
+        className="h-14 flex items-center px-4 gap-2 shrink-0 z-40"
+        style={{ background: 'var(--color-background)', borderBottom: '1px solid var(--color-border)' }}
+      >
+        {/* Brand */}
+        <div className="flex items-center gap-2.5 mr-3 shrink-0">
+          <div className="w-8 h-8 flex items-center justify-center rounded-lg shrink-0"
+            style={{ background: 'var(--color-primary)' }}>
             <PenLine className="w-4 h-4 text-white" />
           </div>
-          <span className="font-bold text-gray-900 text-sm tracking-wide hidden sm:block">AKSARA</span>
+          <div className="hidden sm:flex flex-col leading-none">
+            <span className="font-bold text-sm" style={{ color: 'var(--color-text-primary)', letterSpacing: '0.12em' }}>
+              AKSARA
+            </span>
+            <span className="text-[9px] font-medium" style={{ color: 'var(--color-text-secondary)', letterSpacing: '0.06em' }}>
+              Document Workspace
+            </span>
+          </div>
         </div>
 
-        <div className="w-px h-6 bg-gray-100 mx-0.5 hidden sm:block" />
+        <div className="w-px h-6 shrink-0 hidden sm:block" style={{ background: 'var(--color-border)' }} />
 
+        {/* Upload */}
         <input ref={fileInputRef} type="file" accept=".pdf" className="hidden" onChange={handleFileChange} />
-        <ToolButton icon={loading ? Loader2 : Upload} label="Upload" onClick={() => fileInputRef.current?.click()} loading={loading} primary />
+        <ToolBtn icon={loading ? Loader2 : Upload} label="Upload" onClick={() => fileInputRef.current?.click()} loading={loading} variant="secondary" />
 
+        {/* Placement banner OR tools */}
         {isPlacing ? (
-          <div className="flex items-center gap-2 px-2.5 py-1.5 bg-blue-50 border border-blue-200 rounded-lg ml-1">
-            <span className="text-xs font-medium text-blue-700 hidden sm:block">Click PDF to place</span>
-            <span className="text-xs font-medium text-blue-700 sm:hidden">Place sign</span>
-            <button onClick={cancelSignaturePlacement} className="p-0.5 hover:bg-blue-100 rounded" title="Cancel (ESC)">
-              <X className="w-3.5 h-3.5 text-blue-500" />
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg ml-1"
+            style={{ background: '#EEF2FF', border: '1px solid #C7D2FE' }}>
+            <span className="text-xs font-medium hidden sm:block" style={{ color: 'var(--color-primary)' }}>
+              Click PDF to place signature
+            </span>
+            <span className="text-xs font-medium sm:hidden" style={{ color: 'var(--color-primary)' }}>
+              Click to place
+            </span>
+            <button onClick={cancelSignaturePlacement} className="p-0.5 rounded hover:bg-indigo-100 transition-colors">
+              <X className="w-3.5 h-3.5" style={{ color: 'var(--color-primary)' }} />
             </button>
           </div>
         ) : (
-          <div className="hidden md:flex items-center gap-1 ml-0.5">
-            <div className="w-px h-6 bg-gray-100 mx-0.5" />
+          <div className="hidden md:flex items-center gap-1 ml-1">
+            <div className="w-px h-5 shrink-0" style={{ background: 'var(--color-border)' }} />
             {tools.map((tool) => (
-              <ToolButton key={tool.id} icon={tool.icon} label={tool.label} shortcut={tool.shortcut}
+              <ToolBtn key={tool.id} icon={tool.icon} label={tool.label} shortcut={tool.shortcut}
                 active={activeToolMode === tool.id} disabled={!pdfDoc}
                 onClick={() => handleToolClick(tool.id)} />
             ))}
           </div>
         )}
 
+        {/* Undo / Redo */}
         <div className="hidden md:flex items-center gap-1">
-          <div className="w-px h-6 bg-gray-100 mx-0.5" />
-          <ToolButton icon={Undo2} label="Undo" shortcut="⌘Z" disabled={!canUndo} onClick={undo} />
-          <ToolButton icon={Redo2} label="Redo" shortcut="⌘Y" disabled={!canRedo} onClick={redo} />
+          <div className="w-px h-5 shrink-0 ml-1" style={{ background: 'var(--color-border)' }} />
+          <ToolBtn icon={Undo2} label="Undo" shortcut="⌘Z" disabled={!canUndo} onClick={undo} iconOnly />
+          <ToolBtn icon={Redo2} label="Redo" shortcut="⌘Y" disabled={!canRedo} onClick={redo} iconOnly />
         </div>
 
+        {/* Page nav */}
         {pdfDoc && (
           <div className="hidden md:flex items-center gap-1">
-            <div className="w-px h-6 bg-gray-100 mx-0.5" />
-            <ToolButton icon={ChevronLeft} label="Prev" disabled={currentPage === 0} onClick={() => setCurrentPage(currentPage - 1)} />
-            <div className="flex items-center gap-1 px-2 py-1 bg-gray-50 rounded-lg">
+            <div className="w-px h-5 shrink-0 ml-1" style={{ background: 'var(--color-border)' }} />
+            <ToolBtn icon={ChevronLeft} label="Prev" disabled={currentPage === 0} onClick={() => setCurrentPage(currentPage - 1)} iconOnly />
+            <div className="flex items-center gap-1 px-2 py-1 rounded-lg"
+              style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
               <input type="number" min={1} max={pdfDoc.numPages} value={currentPage + 1}
                 onChange={(e) => { const v = Number(e.target.value) - 1; if (v >= 0 && v < pdfDoc.numPages) setCurrentPage(v); }}
-                className="w-7 text-center text-xs bg-transparent focus:outline-none text-gray-700 font-medium" />
-              <span className="text-xs text-gray-400">/ {pdfDoc.numPages}</span>
+                className="w-6 text-center bg-transparent focus:outline-none font-medium"
+                style={{ fontSize: 12, color: 'var(--color-text-primary)' }} />
+              <span style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>/ {pdfDoc.numPages}</span>
             </div>
-            <ToolButton icon={ChevronRight} label="Next" disabled={currentPage === pdfDoc.numPages - 1} onClick={() => setCurrentPage(currentPage + 1)} />
+            <ToolBtn icon={ChevronRight} label="Next" disabled={currentPage === pdfDoc.numPages - 1} onClick={() => setCurrentPage(currentPage + 1)} iconOnly />
           </div>
         )}
 
         <div className="flex-1" />
 
-        {error && <span className="text-xs text-red-500 max-w-[120px] truncate hidden lg:block">{error}</span>}
+        {error && <span className="text-xs truncate max-w-[120px] hidden lg:block" style={{ color: 'var(--color-danger)' }}>{error}</span>}
 
+        {/* Filename editor */}
         {pdfDoc && (
           <div className="hidden sm:flex items-center gap-1.5 mr-1">
             {editingFileName ? (
-              <input
-                value={downloadFileName}
-                onChange={(e) => setDownloadFileName(e.target.value)}
+              <input value={downloadFileName} onChange={(e) => setDownloadFileName(e.target.value)}
                 onBlur={() => setEditingFileName(false)}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') setEditingFileName(false); }}
-                className="text-xs border border-blue-300 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-blue-400 w-40 bg-white"
-                autoFocus
-              />
+                className="text-xs px-2 py-1 rounded-lg w-40 focus:outline-none"
+                style={{ border: '1px solid var(--color-primary)', boxShadow: '0 0 0 3px rgb(67 56 202 / 0.12)', color: 'var(--color-text-primary)', background: 'var(--color-background)', fontSize: 12 }}
+                autoFocus />
             ) : (
               <button onClick={() => setEditingFileName(true)}
-                className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-700 hover:bg-gray-50 px-2 py-1 rounded-md transition-colors group max-w-[160px]"
-                title="Click to rename">
+                className="flex items-center gap-1.5 px-2 py-1 rounded-lg transition-colors group max-w-[160px]"
+                style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}
+                title="Click to rename"
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--color-surface)'; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
                 <FileEdit className="w-3 h-3 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
                 <span className="truncate">{downloadFileName || pdfDoc.file.name}.pdf</span>
               </button>
@@ -131,69 +156,72 @@ export function Toolbar() {
           </div>
         )}
 
-        <div className="w-px h-6 bg-gray-100 mx-0.5 hidden sm:block" />
+        <div className="w-px h-5 shrink-0 hidden sm:block" style={{ background: 'var(--color-border)' }} />
 
+        {/* Download */}
         <button onClick={exportPdf} disabled={!pdfDoc || isExporting}
-          className={cn(
-            'flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all shrink-0',
-            !pdfDoc || isExporting
-              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-              : 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm shadow-blue-200'
-          )}>
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all shrink-0"
+          style={!pdfDoc || isExporting
+            ? { background: 'var(--color-surface)', color: 'var(--color-text-disabled)', cursor: 'not-allowed', border: '1px solid var(--color-border)' }
+            : { background: 'var(--color-primary)', color: '#fff', boxShadow: 'var(--shadow-sm)' }}
+          onMouseEnter={(e) => { if (pdfDoc && !isExporting) (e.currentTarget as HTMLElement).style.background = 'var(--color-primary-hover)'; }}
+          onMouseLeave={(e) => { if (pdfDoc && !isExporting) (e.currentTarget as HTMLElement).style.background = 'var(--color-primary)'; }}>
           {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
           <span className="hidden sm:inline">{isExporting ? 'Saving…' : 'Download'}</span>
         </button>
 
+        {/* Mobile hamburger */}
         <button onClick={() => setMobileMenuOpen((v) => !v)}
-          className="md:hidden p-2 hover:bg-gray-100 rounded-lg transition-colors ml-1">
-          <Menu className="w-4 h-4 text-gray-600" />
+          className="md:hidden p-2 rounded-lg transition-colors ml-1"
+          style={{ color: 'var(--color-text-secondary)' }}>
+          <Menu className="w-4 h-4" />
         </button>
       </header>
 
+      {/* Mobile menu */}
       {mobileMenuOpen && (
         <>
-          <div className="fixed inset-0 z-40 bg-black/20" onClick={() => setMobileMenuOpen(false)} />
-          <div className="fixed top-14 right-0 left-0 z-50 bg-white border-b border-gray-200 shadow-xl md:hidden">
-            <div className="p-3 space-y-1">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 pb-1">Annotate</p>
+          <div className="fixed inset-0 z-40 bg-black/25" onClick={() => setMobileMenuOpen(false)} />
+          <div className="fixed top-14 right-0 left-0 z-50 md:hidden"
+            style={{ background: 'var(--color-background)', borderBottom: '1px solid var(--color-border)', boxShadow: 'var(--shadow-md)' }}>
+            <div className="p-3 space-y-0.5">
+              <p className="label px-3 py-2">Annotate</p>
               {!isPlacing && tools.map((tool) => (
-                <MobileMenuItem key={tool.id} icon={tool.icon} label={tool.label}
+                <MobileItem key={tool.id} icon={tool.icon} label={tool.label}
                   active={activeToolMode === tool.id} disabled={!pdfDoc}
                   onClick={() => handleToolClick(tool.id)} />
               ))}
-
-              <div className="border-t border-gray-100 my-2" />
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 pb-1">History</p>
-              <div className="flex gap-2">
-                <MobileMenuItem icon={Undo2} label="Undo" disabled={!canUndo} onClick={() => { undo(); setMobileMenuOpen(false); }} />
-                <MobileMenuItem icon={Redo2} label="Redo" disabled={!canRedo} onClick={() => { redo(); setMobileMenuOpen(false); }} />
+              <div className="h-px mx-1 my-2" style={{ background: 'var(--color-border)' }} />
+              <p className="label px-3 py-1">History</p>
+              <div className="flex gap-1">
+                <MobileItem icon={Undo2} label="Undo" disabled={!canUndo} onClick={() => { undo(); setMobileMenuOpen(false); }} />
+                <MobileItem icon={Redo2} label="Redo" disabled={!canRedo} onClick={() => { redo(); setMobileMenuOpen(false); }} />
               </div>
-
               {pdfDoc && (
                 <>
-                  <div className="border-t border-gray-100 my-2" />
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 pb-1">Pages</p>
-                  <div className="flex items-center gap-2 px-2">
+                  <div className="h-px mx-1 my-2" style={{ background: 'var(--color-border)' }} />
+                  <p className="label px-3 py-1">Pages</p>
+                  <div className="flex items-center gap-2 px-3 py-1">
                     <button disabled={currentPage === 0}
                       onClick={() => { setCurrentPage(currentPage - 1); setMobileMenuOpen(false); }}
-                      className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-40">
+                      className="p-2 rounded-lg disabled:opacity-40" style={{ background: 'var(--color-surface)' }}>
                       <ChevronLeft className="w-4 h-4" />
                     </button>
-                    <span className="text-sm text-gray-700 font-medium">{currentPage + 1} / {pdfDoc.numPages}</span>
+                    <span className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>
+                      {currentPage + 1} / {pdfDoc.numPages}
+                    </span>
                     <button disabled={currentPage === pdfDoc.numPages - 1}
                       onClick={() => { setCurrentPage(currentPage + 1); setMobileMenuOpen(false); }}
-                      className="p-2 rounded-lg hover:bg-gray-100 disabled:opacity-40">
+                      className="p-2 rounded-lg disabled:opacity-40" style={{ background: 'var(--color-surface)' }}>
                       <ChevronRight className="w-4 h-4" />
                     </button>
                   </div>
-
-                  <div className="border-t border-gray-100 my-2" />
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-2 pb-1">Download filename</p>
-                  <div className="px-2">
+                  <div className="h-px mx-1 my-2" style={{ background: 'var(--color-border)' }} />
+                  <p className="label px-3 py-1">Download filename</p>
+                  <div className="px-3 pb-2">
                     <input value={downloadFileName} onChange={(e) => setDownloadFileName(e.target.value)}
-                      className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
-                      placeholder="filename" />
-                    <p className="text-xs text-gray-400 mt-1">.pdf will be appended</p>
+                      className="input" placeholder="filename" />
+                    <p className="text-xs mt-1" style={{ color: 'var(--color-text-secondary)' }}>.pdf will be appended</p>
                   </div>
                 </>
               )}
@@ -205,43 +233,42 @@ export function Toolbar() {
   );
 }
 
-interface ToolButtonProps {
+interface ToolBtnProps {
   icon: React.ComponentType<{ className?: string }>;
   label: string; shortcut?: string; active?: boolean;
-  disabled?: boolean; loading?: boolean; primary?: boolean;
+  disabled?: boolean; loading?: boolean; iconOnly?: boolean;
+  variant?: 'ghost' | 'secondary';
   onClick: () => void;
 }
 
-function ToolButton({ icon: Icon, label, shortcut, active, disabled, loading, primary, onClick }: ToolButtonProps) {
+function ToolBtn({ icon: Icon, label, shortcut, active, disabled, loading, iconOnly, variant = 'ghost', onClick }: ToolBtnProps) {
+  const getStyle = (): React.CSSProperties => {
+    if (active) return { background: '#EEF2FF', color: 'var(--color-primary)', borderRadius: 8 };
+    if (variant === 'secondary') return { background: 'var(--color-surface)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border)', borderRadius: 8 };
+    return { color: 'var(--color-text-secondary)', borderRadius: 8 };
+  };
   return (
     <button onClick={onClick} disabled={disabled || loading}
       title={shortcut ? `${label} (${shortcut})` : label}
-      className={cn(
-        'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm font-medium transition-all',
-        active && 'bg-blue-50 text-blue-600',
-        primary && !active && 'border border-gray-200 text-gray-700 hover:bg-gray-50',
-        !active && !primary && 'text-gray-600 hover:bg-gray-50 hover:text-gray-900',
-        (disabled || loading) && 'opacity-40 cursor-not-allowed hover:bg-transparent',
-      )}>
+      className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium transition-all"
+      style={{ ...getStyle(), opacity: disabled || loading ? 0.4 : 1, cursor: disabled || loading ? 'not-allowed' : 'pointer' }}
+      onMouseEnter={(e) => { if (!active && !disabled && !loading) { (e.currentTarget as HTMLElement).style.background = 'var(--color-surface)'; (e.currentTarget as HTMLElement).style.color = 'var(--color-text-primary)'; } }}
+      onMouseLeave={(e) => { if (!active && !disabled && !loading) { (e.currentTarget as HTMLElement).style.background = variant === 'secondary' ? 'var(--color-surface)' : 'transparent'; (e.currentTarget as HTMLElement).style.color = variant === 'secondary' ? 'var(--color-text-primary)' : 'var(--color-text-secondary)'; } }}>
       <Icon className={cn('w-4 h-4', loading && 'animate-spin')} />
-      <span className="hidden lg:inline">{label}</span>
+      {!iconOnly && <span className="hidden lg:inline">{label}</span>}
     </button>
   );
 }
 
-function MobileMenuItem({ icon: Icon, label, active, disabled, onClick }: {
+function MobileItem({ icon: Icon, label, active, disabled, onClick }: {
   icon: React.ComponentType<{ className?: string }>; label: string;
   active?: boolean; disabled?: boolean; onClick: () => void;
 }) {
   return (
     <button onClick={onClick} disabled={disabled}
-      className={cn(
-        'flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-sm font-medium transition-all',
-        active ? 'bg-blue-50 text-blue-600' : 'text-gray-700 hover:bg-gray-50',
-        disabled && 'opacity-40 cursor-not-allowed',
-      )}>
-      <Icon className="w-4 h-4" />
-      {label}
+      className="flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium transition-all"
+      style={{ background: active ? '#EEF2FF' : 'transparent', color: active ? 'var(--color-primary)' : 'var(--color-text-primary)', opacity: disabled ? 0.4 : 1, cursor: disabled ? 'not-allowed' : 'pointer' }}>
+      <Icon className="w-4 h-4" />{label}
     </button>
   );
 }
