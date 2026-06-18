@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import { useStudioStore } from '@/stores/studio.store';
 import { usePdfLoader } from '@/hooks/usePdfLoader';
 import { usePdfExport } from '@/hooks/usePdfExport';
+import Image from 'next/image';
 
 export function Toolbar() {
   const {
@@ -59,10 +60,11 @@ export function Toolbar() {
       >
         {/* Brand */}
         <div className="flex items-center gap-2.5 mr-3 shrink-0">
-          <div className="w-8 h-8 flex items-center justify-center rounded-lg shrink-0"
+          {/* <div className="w-8 h-8 flex items-center justify-center rounded-lg shrink-0"
             style={{ background: 'var(--color-primary)' }}>
             <PenLine className="w-4 h-4 text-white" />
-          </div>
+          </div> */}
+          <Image src="/favicon-32x32.png" alt="AKSARA" width={32} height={32} className="w-8 h-8" />
           <div className="hidden sm:flex flex-col leading-none">
             <span className="font-bold text-sm" style={{ color: 'var(--color-text-primary)', letterSpacing: '0.12em' }}>
               AKSARA
