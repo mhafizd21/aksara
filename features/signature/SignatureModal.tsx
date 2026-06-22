@@ -92,15 +92,28 @@ function DrawCanvas({ color, onDrawn, canvasRef }: DrawCanvasProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const isDrawing = useRef(false);
   const points = useRef<Point[]>([]);
+  const initializedRef = useRef(false);
 
-  useEffect(() => {
+  const initCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     const wrapper = wrapperRef.current;
     if (!canvas || !wrapper) return;
 
     const dpr = window.devicePixelRatio || 1;
-    const cssW = wrapper.getBoundingClientRect().width || 464;
+    const cssW = wrapper.clientWidth || wrapper.getBoundingClientRect().width || 320;
     const cssH = 200;
+
+    if (
+      initializedRef.current &&
+      canvas.width === Math.floor(cssW * dpr) &&
+      canvas.height === Math.floor(cssH * dpr)
+    ) return;
+
+    let imageData: ImageData | null = null;
+    const ctx0 = canvas.getContext('2d');
+    if (ctx0 && initializedRef.current && canvas.width > 0 && canvas.height > 0) {
+      try { imageData = ctx0.getImageData(0, 0, canvas.width, canvas.height); } catch { /* ignore */ }
+    }
 
     canvas.width = Math.floor(cssW * dpr);
     canvas.height = Math.floor(cssH * dpr);
@@ -115,13 +128,42 @@ function DrawCanvas({ color, onDrawn, canvasRef }: DrawCanvasProps) {
     ctx.imageSmoothingQuality = 'high';
     ctx.strokeStyle = color;
     ctx.fillStyle = color;
+
+    if (imageData) {
+      const tmp = document.createElement('canvas');
+      tmp.width = imageData.width; tmp.height = imageData.height;
+      tmp.getContext('2d')!.putImageData(imageData, 0, 0);
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(tmp, 0, 0, canvas.width, canvas.height);
+      ctx.restore();
+    }
+
+    initializedRef.current = true;
+  }, [canvasRef, color]);
+
+  // Init on mount — rAF + 150ms fallback for slow mobile renders
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => {
+      initCanvas();
+      setTimeout(initCanvas, 150);
+    });
+    return () => cancelAnimationFrame(raf);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Update color without clearing
   useEffect(() => {
     const ctx = canvasRef.current?.getContext('2d');
     if (ctx) { ctx.strokeStyle = color; ctx.fillStyle = color; }
   }, [color, canvasRef]);
+
+  // Handle orientation change
+  useEffect(() => {
+    const onResize = () => initCanvas();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [initCanvas]);
 
   const getPos = (clientX: number, clientY: number): { x: number; y: number } => {
     const rect = canvasRef.current!.getBoundingClientRect();
@@ -144,7 +186,7 @@ function DrawCanvas({ color, onDrawn, canvasRef }: DrawCanvasProps) {
     if (n === 2) {
       const dt = Math.max(pts[1].t - pts[0].t, 1);
       const speed = Math.sqrt((pts[1].x - pts[0].x) ** 2 + (pts[1].y - pts[0].y) ** 2) / dt;
-      ctx.lineWidth = Math.max(1, Math.min(3.5, 3.5 - speed * 0.01));
+      ctx.lineWidth = Math.max(1.5, Math.min(3.5, 3.5 - speed * 0.01));
       ctx.beginPath();
       ctx.moveTo(pts[0].x, pts[0].y);
       ctx.lineTo(pts[1].x, pts[1].y);
@@ -160,9 +202,8 @@ function DrawCanvas({ color, onDrawn, canvasRef }: DrawCanvasProps) {
     const dt = Math.max(p3.t - p1.t, 1);
     const dist = Math.sqrt((p3.x - p1.x) ** 2 + (p3.y - p1.y) ** 2);
     const speed = dist / dt;
-    ctx.lineWidth = Math.max(1, Math.min(3.5, 3.5 - speed * 0.008));
+    ctx.lineWidth = Math.max(1.5, Math.min(3.5, 3.5 - speed * 0.008));
 
-    // Catmull-Rom → cubic Bezier
     const cp1x = p1.x + (p2.x - p0.x) / 6;
     const cp1y = p1.y + (p2.y - p0.y) / 6;
     const cp2x = p2.x - (p3.x - p1.x) / 6;
@@ -174,15 +215,11 @@ function DrawCanvas({ color, onDrawn, canvasRef }: DrawCanvasProps) {
     ctx.stroke();
   }, [color, canvasRef]);
 
-  const startDraw = useCallback((e: React.MouseEvent | React.TouchEvent) => {
-    e.preventDefault();
+  const beginStroke = useCallback((clientX: number, clientY: number) => {
     isDrawing.current = true;
     points.current = [];
-
-    const raw = 'touches' in e ? e.touches[0] : e.nativeEvent as MouseEvent;
-    const pos = getPos(raw.clientX, raw.clientY);
+    const pos = getPos(clientX, clientY);
     points.current.push({ ...pos, t: Date.now() });
-
     const ctx = canvasRef.current?.getContext('2d');
     if (ctx) {
       ctx.fillStyle = color;
@@ -194,47 +231,76 @@ function DrawCanvas({ color, onDrawn, canvasRef }: DrawCanvasProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [color, onDrawn]);
 
-  const continueDraw = useCallback((e: MouseEvent | TouchEvent) => {
+  const continueStroke = useCallback((clientX: number, clientY: number) => {
     if (!isDrawing.current || !canvasRef.current) return;
-    e.preventDefault();
-
-    const raw = 'touches' in e ? e.touches[0] : e as MouseEvent;
-    const pos = getPos(raw.clientX, raw.clientY);
-
+    const pos = getPos(clientX, clientY);
     const last = points.current[points.current.length - 1];
+    if (!last) return;
     const d = Math.sqrt((pos.x - last.x) ** 2 + (pos.y - last.y) ** 2);
     if (d < 1) return;
-
     points.current.push({ ...pos, t: Date.now() });
     drawSmooth(points.current);
-  }, [canvasRef, drawSmooth]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drawSmooth]);
 
-  const stopDraw = useCallback(() => {
+  const endStroke = useCallback(() => {
     isDrawing.current = false;
     points.current = [];
   }, []);
 
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    beginStroke(e.clientX, e.clientY);
+  }, [beginStroke]);
+
+  // Touch: attach directly with passive:false to allow preventDefault
   useEffect(() => {
-    const onMove = (e: MouseEvent | TouchEvent) => continueDraw(e);
-    const onUp = () => stopDraw();
-    window.addEventListener('mousemove', onMove, { passive: false });
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const onTouchStart = (e: TouchEvent) => {
+      e.preventDefault();
+      if (e.touches.length !== 1) return;
+      beginStroke(e.touches[0].clientX, e.touches[0].clientY);
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      e.preventDefault();
+      if (e.touches.length !== 1) return;
+      continueStroke(e.touches[0].clientX, e.touches[0].clientY);
+    };
+    const onTouchEnd = (e: TouchEvent) => {
+      e.preventDefault();
+      endStroke();
+    };
+
+    canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+    canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+    canvas.addEventListener('touchend', onTouchEnd, { passive: false });
+
+    return () => {
+      canvas.removeEventListener('touchstart', onTouchStart);
+      canvas.removeEventListener('touchmove', onTouchMove);
+      canvas.removeEventListener('touchend', onTouchEnd);
+    };
+  }, [canvasRef, beginStroke, continueStroke, endStroke]);
+
+  // Mouse move/up on window
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => continueStroke(e.clientX, e.clientY);
+    const onUp = () => endStroke();
+    window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
-    window.addEventListener('touchmove', onMove, { passive: false });
-    window.addEventListener('touchend', onUp);
     return () => {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
-      window.removeEventListener('touchmove', onMove);
-      window.removeEventListener('touchend', onUp);
     };
-  }, [continueDraw, stopDraw]);
+  }, [continueStroke, endStroke]);
 
   return (
-    <div ref={wrapperRef} className="w-full" style={{ touchAction: 'none' }}>
+    <div ref={wrapperRef} className="w-full" style={{ touchAction: 'none', userSelect: 'none' }}>
       <canvas
         ref={canvasRef as React.RefObject<HTMLCanvasElement>}
-        onMouseDown={startDraw}
-        onTouchStart={startDraw}
+        onMouseDown={handleMouseDown}
         style={{ cursor: 'crosshair', display: 'block', width: '100%', touchAction: 'none' }}
       />
     </div>
@@ -333,18 +399,31 @@ export function SignatureModal() {
   const showColorPicker = signatureMode === 'draw' || signatureMode === 'type';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
       <div className="absolute inset-0"
         style={{ background: 'rgba(15,23,42,0.4)', backdropFilter: 'blur(4px)' }}
         onClick={handleClose} />
-      <div className="relative w-full max-w-lg mx-4 overflow-hidden"
-        style={{ background: 'var(--color-background)', borderRadius: 'var(--radius-modal)', boxShadow: '0 20px 60px -10px rgba(0,0,0,0.25)', border: '1px solid var(--color-border)' }}>
 
-        <div className="flex items-center justify-between px-6 py-4"
+      <div className="relative w-full sm:max-w-lg sm:mx-4 overflow-hidden"
+        style={{
+          background: 'var(--color-background)',
+          borderRadius: '16px 16px 0 0',
+          border: '1px solid var(--color-border)',
+          maxHeight: '92dvh',
+          overflowY: 'auto',
+        }}>
+
+        {/* Mobile drag handle */}
+        <div className="flex justify-center pt-3 pb-1 sm:hidden">
+          <div className="w-10 h-1 rounded-full" style={{ background: 'var(--color-border)' }} />
+        </div>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4"
           style={{ borderBottom: '1px solid var(--color-border)' }}>
           <div>
             <h2 className="text-base font-semibold" style={{ color: 'var(--color-text-primary)' }}>Create Signature</h2>
-            <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-secondary)' }}>Draw, type, or upload your signature</p>
+            <p className="text-xs mt-0.5 hidden sm:block" style={{ color: 'var(--color-text-secondary)' }}>Draw, type, or upload</p>
           </div>
           <button onClick={handleClose} className="p-1.5 rounded-lg transition-colors"
             style={{ color: 'var(--color-text-secondary)' }}
@@ -354,7 +433,8 @@ export function SignatureModal() {
           </button>
         </div>
 
-        <div className="flex px-6 pt-4 gap-1">
+        {/* Tabs */}
+        <div className="flex px-4 sm:px-6 pt-3 gap-1">
           {tabs.map((tab) => (
             <button key={tab.id} onClick={() => { setSignatureMode(tab.id); handleClear(); }}
               className="px-4 py-2 text-sm font-medium rounded-lg transition-all"
@@ -364,19 +444,19 @@ export function SignatureModal() {
           ))}
         </div>
 
-        <div className="px-6 py-4 space-y-4">
+        <div className="px-4 sm:px-6 py-4 space-y-4">
           {showColorPicker && (
             <div className="flex items-center gap-3">
               <span className="text-xs font-medium" style={{ color: 'var(--color-text-secondary)' }}>Color</span>
               <div className="flex items-center gap-2">
                 {PRESET_COLORS.map((c) => (
                   <button key={c.value} onClick={() => { setSelectedColor(c.value); setIsCustom(false); }} title={c.label}
-                    className="w-6 h-6 rounded-full transition-all"
+                    className="w-7 h-7 rounded-full transition-all"
                     style={{ backgroundColor: c.value, outline: !isCustom && selectedColor === c.value ? '2px solid var(--color-primary)' : '2px solid transparent', outlineOffset: 2, transform: !isCustom && selectedColor === c.value ? 'scale(1.15)' : 'scale(1)' }} />
                 ))}
                 <div className="relative">
                   <button onClick={() => colorInputRef.current?.click()} title="Custom color"
-                    className="w-6 h-6 rounded-full transition-all"
+                    className="w-7 h-7 rounded-full transition-all"
                     style={{ background: 'conic-gradient(red, yellow, lime, cyan, blue, magenta, red)', outline: isCustom ? '2px solid var(--color-primary)' : '2px solid var(--color-border)', outlineOffset: 2, transform: isCustom ? 'scale(1.15)' : 'scale(1)' }} />
                   <input ref={colorInputRef} type="color" value={customColor}
                     onChange={(e) => { setCustomColor(e.target.value); setIsCustom(true); }}
@@ -405,15 +485,15 @@ export function SignatureModal() {
           {signatureMode === 'type' && (
             <div className="space-y-3">
               <input type="text" value={typedSignature} onChange={(e) => setTypedSignature(e.target.value)}
-                placeholder="Type your name" className="input" />
+                placeholder="Type your name" className="input" style={{ fontSize: 16 }} />
               <div className="space-y-2">
                 <p className="label">Choose style</p>
                 <div className="grid grid-cols-3 gap-2">
                   {SIGNATURE_FONTS.map((font) => (
                     <button key={font.name} onClick={() => setSelectedFont(font)}
-                      className="px-3 py-3 rounded-xl text-center transition-all"
+                      className="px-2 py-3 rounded-xl text-center transition-all"
                       style={{ border: `1.5px solid ${selectedFont.name === font.name ? 'var(--color-primary)' : 'var(--color-border)'}`, background: selectedFont.name === font.name ? '#EEF2FF' : 'transparent' }}>
-                      <span style={{ fontFamily: font.style, fontSize: 20, color: activeColor }}>{typedSignature || 'Sign'}</span>
+                      <span style={{ fontFamily: font.style, fontSize: 18, color: activeColor }}>{typedSignature || 'Sign'}</span>
                     </button>
                   ))}
                 </div>
@@ -426,40 +506,40 @@ export function SignatureModal() {
               <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
               {uploadedImage ? (
                 <div className="space-y-3">
-                  <div className="h-48 flex items-center justify-center overflow-hidden"
+                  <div className="h-40 flex items-center justify-center overflow-hidden"
                     style={{ borderRadius: 12, border: '1.5px solid var(--color-border)', backgroundImage: bgRemoved ? 'repeating-conic-gradient(#E2E8F0 0% 25%, #F8FAFC 0% 50%) 0 0 / 16px 16px' : undefined, background: bgRemoved ? undefined : 'var(--color-surface)' }}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={uploadedImage} alt="Signature" className="max-h-full max-w-full object-contain" />
                   </div>
                   <div className="flex items-center gap-2">
                     <button onClick={() => fileInputRef.current?.click()}
-                      className="flex-1 px-3 py-2 text-xs font-medium rounded-lg transition-colors"
+                      className="flex-1 px-3 py-2.5 text-sm font-medium rounded-lg transition-colors"
                       style={{ border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)' }}
                       onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--color-surface)'; }}
                       onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
-                      Change image
+                      Change
                     </button>
                     <button onClick={handleRemoveBg} disabled={removingBg || bgRemoved}
-                      className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg transition-all"
+                      className="flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium rounded-lg transition-all"
                       style={bgRemoved
                         ? { background: '#F0FDF4', color: 'var(--color-success)', border: '1px solid #BBF7D0' }
                         : removingBg
                         ? { background: 'var(--color-surface)', color: 'var(--color-text-disabled)', border: '1px solid var(--color-border)' }
                         : { background: '#FAF5FF', color: '#7C3AED', border: '1px solid #DDD6FE' }}>
-                      <Wand2 className="w-3.5 h-3.5" />
+                      <Wand2 className="w-4 h-4" />
                       {bgRemoved ? 'Removed' : removingBg ? 'Processing…' : 'Remove bg'}
                     </button>
                   </div>
                 </div>
               ) : (
                 <button onClick={() => fileInputRef.current?.click()}
-                  className="w-full h-48 flex flex-col items-center justify-center gap-3 transition-all"
+                  className="w-full h-40 flex flex-col items-center justify-center gap-3 transition-all"
                   style={{ border: '1.5px dashed var(--color-border)', borderRadius: 12, background: 'var(--color-surface)' }}
                   onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--color-primary)'; (e.currentTarget as HTMLElement).style.background = '#EEF2FF'; }}
                   onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--color-border)'; (e.currentTarget as HTMLElement).style.background = 'var(--color-surface)'; }}>
                   <Upload className="w-7 h-7" style={{ color: 'var(--color-text-disabled)' }} />
                   <div className="text-center">
-                    <p className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>Click to upload</p>
+                    <p className="text-sm font-medium" style={{ color: 'var(--color-text-primary)' }}>Tap to upload</p>
                     <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-secondary)' }}>PNG, JPG, SVG</p>
                   </div>
                 </button>
@@ -468,10 +548,11 @@ export function SignatureModal() {
           )}
         </div>
 
-        <div className="flex items-center justify-between px-6 py-4"
+        {/* Footer */}
+        <div className="flex items-center justify-between px-4 sm:px-6 py-4"
           style={{ borderTop: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
           <button onClick={handleClear}
-            className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-all"
+            className="flex items-center gap-2 px-3 py-2.5 text-sm font-medium rounded-lg transition-all"
             style={{ color: 'var(--color-text-secondary)' }}
             onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--color-border)'; }}
             onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
@@ -479,18 +560,18 @@ export function SignatureModal() {
           </button>
           <div className="flex gap-2">
             <button onClick={handleClose}
-              className="px-4 py-2 text-sm font-medium rounded-lg transition-all"
+              className="px-4 py-2.5 text-sm font-medium rounded-lg transition-all hidden sm:block"
               style={{ color: 'var(--color-text-secondary)' }}
               onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--color-border)'; }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
               Cancel
             </button>
             <button onClick={handleApply}
-              className="flex items-center gap-2 px-5 py-2 text-sm font-medium rounded-lg transition-all"
+              className="flex items-center gap-2 px-5 py-2.5 text-sm font-medium rounded-lg transition-all"
               style={{ background: 'var(--color-primary)', color: '#fff', boxShadow: 'var(--shadow-sm)' }}
               onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--color-primary-hover)'; }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--color-primary)'; }}>
-              <Check className="w-3.5 h-3.5" /> Apply Signature
+              <Check className="w-3.5 h-3.5" /> Apply
             </button>
           </div>
         </div>
