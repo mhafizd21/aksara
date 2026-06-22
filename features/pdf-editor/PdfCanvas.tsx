@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useCallback, useState, useEffect } from 'react';
+import { Clipboard } from 'lucide-react';
 import { useStudioStore } from '@/stores/studio.store';
 import { PdfPageRenderer } from '@/features/pdf-viewer/PdfPageRenderer';
 import { ElementOverlay } from '@/features/pdf-editor/ElementOverlay';
@@ -12,13 +13,15 @@ export function PdfCanvas() {
     addTextField, addDateField, setActiveToolMode,
     pendingSignatureDataUrl, pendingSignatureSize,
     placeSignatureAtPosition, cancelSignaturePlacement,
-    pasteElement,
+    pasteElement, clipboard,
   } = useStudioStore();
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const [ghostPos, setGhostPos] = useState<{ x: number; y: number } | null>(null);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; elX: number; elY: number } | null>(null);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const touchPosRef = useRef<{ x: number; y: number; elX: number; elY: number } | null>(null);
 
   const isPlacingSignature = activeToolMode === 'signature' && !!pendingSignatureDataUrl;
 
@@ -79,33 +82,108 @@ export function PdfCanvas() {
     e.preventDefault();
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
-    setCtxMenu({ x: e.clientX, y: e.clientY, elX: (e.clientX - rect.left) / scale, elY: (e.clientY - rect.top) / scale });
+    setCtxMenu({
+      x: e.clientX, y: e.clientY,
+      elX: (e.clientX - rect.left) / scale,
+      elY: (e.clientY - rect.top) / scale,
+    });
   }, [scale]);
 
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if ((e.target as HTMLElement).closest('[data-element-overlay]')) return;
+    if (isPlacingSignature) return;
+
+    const t = e.touches[0];
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    const pos = {
+      x: t.clientX, y: t.clientY,
+      elX: (t.clientX - rect.left) / scale,
+      elY: (t.clientY - rect.top) / scale,
+    };
+    touchPosRef.current = pos;
+
+    longPressTimer.current = setTimeout(() => {
+      setCtxMenu(pos);
+    }, 600);
+  }, [isPlacingSignature, scale]);
+
+  const handleTouchEnd = useCallback(() => {
+    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+  }, []);
+
+  const handleTouchMove = useCallback(() => {
+    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+  }, []);
+
+  const handleTouchTap = useCallback((e: React.TouchEvent) => {
+    if (!isPlacingSignature || !containerRef.current) return;
+    const t = e.changedTouches[0];
+    const rect = containerRef.current.getBoundingClientRect();
+    placeSignatureAtPosition(currentPage, (t.clientX - rect.left) / scale, (t.clientY - rect.top) / scale);
+    setGhostPos(null);
+  }, [isPlacingSignature, currentPage, scale, placeSignatureAtPosition]);
+
+  const handleTouchMoveGhost = useCallback((e: React.TouchEvent) => {
+    if (!isPlacingSignature || !containerRef.current) return;
+    const t = e.touches[0];
+    const rect = containerRef.current.getBoundingClientRect();
+    setGhostPos({ x: t.clientX - rect.left, y: t.clientY - rect.top });
+  }, [isPlacingSignature]);
+
   const pageElements = elements.filter((el) => el.pageIndex === currentPage);
-  const cursor = isPlacingSignature ? 'none' : activeToolMode === 'text' ? 'text' : activeToolMode === 'date' ? 'crosshair' : 'default';
+
+  const cursor = isPlacingSignature ? 'none'
+    : activeToolMode === 'text' ? 'text'
+    : activeToolMode === 'date' ? 'crosshair'
+    : 'default';
+
   const ghostW = pendingSignatureSize ? pendingSignatureSize.width * scale : 0;
   const ghostH = pendingSignatureSize ? pendingSignatureSize.height * scale : 0;
+  const hasClipboard = !!clipboard;
 
   if (!pdfDoc) return null;
 
   return (
-    <div className="flex-1 overflow-auto flex items-start justify-center p-8" style={{ background: '#F1F5F9' }}>
+    <div className="flex-1 overflow-auto flex items-start justify-center p-4 sm:p-8"
+      style={{ background: '#F1F5F9' }}>
+
       {isPlacingSignature && (
         <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium pointer-events-none"
           style={{ background: 'var(--color-primary)', color: '#fff', boxShadow: 'var(--shadow-md)' }}>
-          <span>Click on the PDF to place your signature</span>
-          <span className="opacity-60 text-xs">· ESC to cancel</span>
+          <span className="hidden sm:inline">Click on the PDF to place your signature</span>
+          <span className="sm:hidden">Tap to place signature</span>
+          <span className="opacity-60 text-xs hidden sm:inline">· ESC to cancel</span>
         </div>
       )}
 
-      <div data-pdf-canvas ref={containerRef}
-        onClick={handleCanvasClick} onContextMenu={handleContextMenu}
-        onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave}
+      <div
+        data-pdf-canvas
+        ref={containerRef}
+        onClick={handleCanvasClick}
+        onContextMenu={handleContextMenu}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={(e) => { handleTouchEnd(); if (isPlacingSignature) handleTouchTap(e); }}
+        onTouchMove={(e) => { handleTouchMove(); handleTouchMoveGhost(e); }}
         className="relative select-none"
-        style={{ cursor, width: canvasSize.width > 0 ? canvasSize.width : 'auto', minWidth: 200, minHeight: 300, background: '#fff', boxShadow: '0 4px 24px 0 rgb(0 0 0 / 0.10), 0 1px 4px 0 rgb(0 0 0 / 0.06)', borderRadius: 2 }}>
-
-        <PdfPageRenderer file={pdfDoc.file} pageIndex={currentPage} scale={scale} onDimensionsChange={handleDimensionsChange} />
+        style={{
+          cursor,
+          width: canvasSize.width > 0 ? canvasSize.width : 'auto',
+          minWidth: 200, minHeight: 300,
+          background: '#fff',
+          boxShadow: '0 4px 24px 0 rgb(0 0 0 / 0.10), 0 1px 4px 0 rgb(0 0 0 / 0.06)',
+          borderRadius: 2,
+          touchAction: isPlacingSignature ? 'none' : 'pan-x pan-y',
+        }}
+      >
+        <PdfPageRenderer
+          file={pdfDoc.file}
+          pageIndex={currentPage}
+          scale={scale}
+          onDimensionsChange={handleDimensionsChange}
+        />
 
         <div className="absolute inset-0" style={{ pointerEvents: 'none' }}>
           {pageElements.map((el) => (
@@ -119,28 +197,46 @@ export function PdfCanvas() {
           <div className="absolute pointer-events-none" style={{
             left: ghostPos.x - ghostW / 2, top: ghostPos.y - ghostH / 2,
             width: ghostW, height: ghostH,
-            opacity: 0.7, border: '1.5px dashed var(--color-primary)', borderRadius: 4, boxSizing: 'border-box',
+            opacity: 0.7, border: '1.5px dashed var(--color-primary)',
+            borderRadius: 4, boxSizing: 'border-box',
           }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={pendingSignatureDataUrl} alt="Signature preview"
-              style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} draggable={false} />
+              style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+              draggable={false} />
           </div>
         )}
       </div>
 
       {ctxMenu && (
-        <div className="fixed z-[200] py-1 min-w-[160px]"
-          style={{ left: ctxMenu.x, top: ctxMenu.y, background: 'var(--color-background)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-dropdown)', boxShadow: 'var(--shadow-md)' }}
-          onClick={(e) => e.stopPropagation()}>
+        <div
+          className="fixed z-[200] py-1 min-w-[160px]"
+          style={{
+            left: Math.min(ctxMenu.x, window.innerWidth - 170),
+            top: Math.min(ctxMenu.y, window.innerHeight - 80),
+            background: 'var(--color-background)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 'var(--radius-dropdown)',
+            boxShadow: 'var(--shadow-md)',
+          }}
+          onClick={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+        >
           <button
             onClick={() => { pasteElement(ctxMenu.elX, ctxMenu.elY); setCtxMenu(null); }}
-            disabled={!useStudioStore.getState().clipboard}
-            className="w-full flex items-center justify-between px-3 py-1.5 text-sm transition-colors"
-            style={{ color: 'var(--color-text-primary)', opacity: !useStudioStore.getState().clipboard ? 0.4 : 1, cursor: !useStudioStore.getState().clipboard ? 'not-allowed' : 'pointer' }}
-            onMouseEnter={(e) => { if (useStudioStore.getState().clipboard) (e.currentTarget as HTMLElement).style.background = 'var(--color-surface)'; }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
-            <span>Paste</span>
-            <span className="text-xs ml-6" style={{ color: 'var(--color-text-secondary)' }}>⌘V</span>
+            disabled={!hasClipboard}
+            className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm transition-colors"
+            style={{
+              color: 'var(--color-text-primary)',
+              opacity: !hasClipboard ? 0.4 : 1,
+              cursor: !hasClipboard ? 'not-allowed' : 'pointer',
+            }}
+            onMouseEnter={(e) => { if (hasClipboard) (e.currentTarget as HTMLElement).style.background = 'var(--color-surface)'; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+          >
+            <Clipboard className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--color-text-secondary)' }} />
+            <span className="flex-1 text-left">Paste</span>
+            <span className="text-xs hidden sm:inline" style={{ color: 'var(--color-text-disabled)' }}>⌘V</span>
           </button>
         </div>
       )}
