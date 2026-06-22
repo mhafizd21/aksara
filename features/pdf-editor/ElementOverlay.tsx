@@ -9,6 +9,16 @@ interface ElementOverlayProps { element: PdfElement; scale: number; }
 type ResizeHandle = 'se' | 'sw' | 'ne' | 'nw' | 'e' | 'w' | 'n' | 's';
 const MIN_SIZE = 40;
 
+function getClient(e: MouseEvent | TouchEvent): { clientX: number; clientY: number } {
+  if ('touches' in e && e.touches.length > 0) {
+    return { clientX: e.touches[0].clientX, clientY: e.touches[0].clientY };
+  }
+  if ('changedTouches' in e && (e as TouchEvent).changedTouches.length > 0) {
+    return { clientX: (e as TouchEvent).changedTouches[0].clientX, clientY: (e as TouchEvent).changedTouches[0].clientY };
+  }
+  return { clientX: (e as MouseEvent).clientX, clientY: (e as MouseEvent).clientY };
+}
+
 export function ElementOverlay({ element, scale }: ElementOverlayProps) {
   const { selectedId, setSelectedId, updateElement, deleteElement, duplicateElement,
     copyElement, cutElement, pasteElement, clipboard, pushHistory } = useStudioStore();
@@ -18,6 +28,7 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
   const resizeRef = useRef<{ handle: ResizeHandle; startMouseX: number; startMouseY: number; startX: number; startY: number; startW: number; startH: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const didMoveRef = useRef(false);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
@@ -28,11 +39,16 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
     return () => { window.removeEventListener('click', close); window.removeEventListener('contextmenu', close); };
   }, [ctxMenu]);
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation(); e.preventDefault();
+  const startDrag = useCallback((clientX: number, clientY: number) => {
     setSelectedId(element.id);
     didMoveRef.current = false;
-    dragStartRef.current = { mouseX: e.clientX, mouseY: e.clientY, elX: element.position.x, elY: element.position.y };
+    dragStartRef.current = { mouseX: clientX, mouseY: clientY, elX: element.position.x, elY: element.position.y };
+  }, [element, setSelectedId]);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation(); e.preventDefault();
+    startDrag(e.clientX, e.clientY);
+
     const onMove = (ev: MouseEvent) => {
       if (!dragStartRef.current) return;
       if (!didMoveRef.current && Math.abs(ev.clientX - dragStartRef.current.mouseX) < 2 && Math.abs(ev.clientY - dragStartRef.current.mouseY) < 2) return;
@@ -44,7 +60,41 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
     const onUp = () => { dragStartRef.current = null; setIsDragging(false); window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
-  }, [element, scale, setSelectedId, updateElement, pushHistory]);
+  }, [element, scale, startDrag, updateElement, pushHistory]);
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    e.stopPropagation();
+    const t = e.touches[0];
+    startDrag(t.clientX, t.clientY);
+
+    // Long press → context menu
+    longPressTimer.current = setTimeout(() => {
+      setSelectedId(element.id);
+      setCtxMenu({ x: t.clientX, y: t.clientY });
+    }, 600);
+
+    const onMove = (ev: TouchEvent) => {
+      if (!dragStartRef.current) return;
+      if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+      const { clientX, clientY } = getClient(ev);
+      if (!didMoveRef.current && Math.abs(clientX - dragStartRef.current.mouseX) < 4 && Math.abs(clientY - dragStartRef.current.mouseY) < 4) return;
+      ev.preventDefault();
+      if (!didMoveRef.current) { pushHistory(); didMoveRef.current = true; setIsDragging(true); }
+      const dx = (clientX - dragStartRef.current.mouseX) / scale;
+      const dy = (clientY - dragStartRef.current.mouseY) / scale;
+      updateElement(element.id, { position: { x: Math.max(0, dragStartRef.current.elX + dx), y: Math.max(0, dragStartRef.current.elY + dy) } });
+      dragStartRef.current = { ...dragStartRef.current, mouseX: clientX, mouseY: clientY, elX: dragStartRef.current.elX + dx, elY: dragStartRef.current.elY + dy };
+    };
+    const onEnd = () => {
+      if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+      dragStartRef.current = null;
+      setIsDragging(false);
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onEnd);
+    };
+    window.addEventListener('touchmove', onMove, { passive: false });
+    window.addEventListener('touchend', onEnd);
+  }, [element, scale, startDrag, updateElement, pushHistory, setSelectedId]);
 
   const handleResizeMouseDown = useCallback((e: React.MouseEvent, handle: ResizeHandle) => {
     e.stopPropagation(); e.preventDefault(); pushHistory();
@@ -82,6 +132,7 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
   const w = element.size.width * scale;
   const h = element.size.height * scale;
 
+  const handles: ResizeHandle[] = ['se', 'sw', 'ne', 'nw', 'e', 'w', 'n', 's'];
   const handlePos: Record<ResizeHandle, React.CSSProperties> = {
     se: { bottom: -5, right: -5, cursor: 'se-resize' },
     sw: { bottom: -5, left: -5, cursor: 'sw-resize' },
@@ -102,10 +153,13 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
 
   return (
     <>
-      <div onMouseDown={handleMouseDown} onContextMenu={handleContextMenu}
+      <div
+        onMouseDown={handleMouseDown}
+        onTouchStart={handleTouchStart}
+        onContextMenu={handleContextMenu}
         className="absolute group"
-        style={{ left: x, top: y, width: w, height: h, cursor: isDragging ? 'grabbing' : 'grab' }}>
-
+        style={{ left: x, top: y, width: w, height: h, cursor: isDragging ? 'grabbing' : 'grab', touchAction: 'none' }}
+      >
         {element.type === 'signature' && (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={element.dataUrl} alt="Signature"
@@ -118,54 +172,66 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
           </div>
         )}
 
-        {/* Border ring */}
-        <div className="absolute inset-0 rounded pointer-events-none"
+        <div className="absolute inset-0 rounded pointer-events-none transition-all"
           style={{ outline: isSelected ? '2px solid var(--color-primary)' : '1.5px solid transparent', outlineOffset: 0 }} />
-        <div className="absolute inset-0 rounded pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"
-          style={{ outline: isSelected ? 'none' : '1.5px solid var(--color-primary)', outlineOffset: 0 }} />
+        {!isSelected && (
+          <div className="absolute inset-0 rounded pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"
+            style={{ outline: '1.5px solid var(--color-primary)', outlineOffset: 0 }} />
+        )}
 
-        {/* Toolbar */}
         {isSelected && (
-          <div className="absolute -top-9 left-0 flex items-center gap-1 px-1.5 py-1 z-50"
+          <div
+            className="absolute -top-9 left-0 flex items-center gap-1 px-1.5 py-1 z-50"
             style={{ background: 'var(--color-background)', border: '1px solid var(--color-border)', borderRadius: 8, boxShadow: 'var(--shadow-md)' }}
-            onMouseDown={(e) => e.stopPropagation()}>
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+          >
             <GripHorizontal className="w-3.5 h-3.5" style={{ color: 'var(--color-text-disabled)' }} />
             <div className="w-px h-3.5" style={{ background: 'var(--color-border)' }} />
-            <FBtn icon={Copy} title="Copy (⌘C)" onClick={() => copyElement(element.id)} />
-            <FBtn icon={Scissors} title="Cut (⌘X)" onClick={() => cutElement(element.id)} />
-            <FBtn icon={Clipboard} title="Duplicate (⌘D)" onClick={() => duplicateElement(element.id)} />
+            <FBtn icon={Copy} title="Copy" onClick={() => copyElement(element.id)} />
+            <FBtn icon={Scissors} title="Cut" onClick={() => cutElement(element.id)} />
+            <FBtn icon={Clipboard} title="Duplicate" onClick={() => duplicateElement(element.id)} />
             <div className="w-px h-3.5" style={{ background: 'var(--color-border)' }} />
             <FBtn icon={Trash2} title="Delete" onClick={() => deleteElement(element.id)} danger />
           </div>
         )}
 
-        {/* Resize handles */}
-        {isSelected && (Object.keys(handlePos) as ResizeHandle[]).map((handle) => (
+        {isSelected && handles.map((handle) => (
           <div key={handle} data-handle={handle} onMouseDown={handleResizeDispatch}
-            className="absolute w-2.5 h-2.5 z-50"
+            className="absolute w-3 h-3 z-50"
             style={{ ...handlePos[handle], background: '#fff', border: '2px solid var(--color-primary)', borderRadius: 3 }} />
         ))}
       </div>
 
-      {/* Context menu */}
       {ctxMenu && (
-        <div className="fixed z-200 py-1 min-w-45"
-          style={{ left: ctxMenu.x, top: ctxMenu.y, background: 'var(--color-background)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-dropdown)', boxShadow: 'var(--shadow-md)' }}
-          onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
+        <div
+          className="fixed z-[200] py-1 min-w-[180px]"
+          style={{
+            left: Math.min(ctxMenu.x, window.innerWidth - 190),
+            top: Math.min(ctxMenu.y, window.innerHeight - 200),
+            background: 'var(--color-background)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 'var(--radius-dropdown)',
+            boxShadow: 'var(--shadow-md)',
+          }}
+          onClick={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+        >
           {ctxItems.map(({ label, shortcut, icon: Icon, onClick, disabled }) => (
             <button key={label} onClick={onClick} disabled={disabled}
-              className="w-full flex items-center gap-2.5 px-3 py-1.5 text-sm transition-colors"
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-sm transition-colors"
               style={{ color: 'var(--color-text-primary)', opacity: disabled ? 0.4 : 1, cursor: disabled ? 'not-allowed' : 'pointer' }}
               onMouseEnter={(e) => { if (!disabled) (e.currentTarget as HTMLElement).style.background = 'var(--color-surface)'; }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
               <Icon className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--color-text-secondary)' }} />
               <span className="flex-1 text-left">{label}</span>
-              <span className="text-xs" style={{ color: 'var(--color-text-disabled)' }}>{shortcut}</span>
+              <span className="text-xs hidden sm:inline" style={{ color: 'var(--color-text-disabled)' }}>{shortcut}</span>
             </button>
           ))}
           <div className="my-1" style={{ height: 1, background: 'var(--color-border)' }} />
           <button onClick={() => { deleteElement(element.id); setCtxMenu(null); }}
-            className="w-full flex items-center gap-2.5 px-3 py-1.5 text-sm transition-colors"
+            className="w-full flex items-center gap-2.5 px-3 py-2 text-sm transition-colors"
             style={{ color: 'var(--color-danger)', cursor: 'pointer' }}
             onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = '#FEF2F2'; }}
             onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
@@ -183,10 +249,15 @@ function FBtn({ icon: Icon, title, onClick, danger }: {
   title: string; onClick: () => void; danger?: boolean;
 }) {
   return (
-    <button onClick={(e) => { e.stopPropagation(); onClick(); }} title={title}
-      className="p-1 rounded transition-colors"
+    <button
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      onTouchEnd={(e) => { e.stopPropagation(); e.preventDefault(); onClick(); }}
+      title={title}
+      className="p-1.5 rounded transition-colors"
+      style={{ background: 'transparent', WebkitTapHighlightColor: 'transparent' }}
       onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = danger ? '#FEF2F2' : 'var(--color-surface)'; }}
-      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
+      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
+    >
       <Icon className="w-3.5 h-3.5" style={{ color: danger ? 'var(--color-danger)' : 'var(--color-text-secondary)' }} />
     </button>
   );
