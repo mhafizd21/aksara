@@ -41,47 +41,39 @@ export function PdfPageRenderer({
         const arrayBuffer = await file.arrayBuffer();
         if (cancelled) return;
 
-        const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+        const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) });
         const pdf = await loadingTask.promise;
         if (cancelled) return;
 
         const page = await pdf.getPage(pageIndex + 1);
         if (cancelled) return;
 
-        // Use devicePixelRatio to render at native resolution — fixes blurry/pecah rendering
         const dpr = window.devicePixelRatio || 1;
         const viewport = page.getViewport({ scale });
 
-        // CSS size = viewport size (what layout sees)
         const cssWidth = viewport.width;
         const cssHeight = viewport.height;
 
-        // Physical canvas size = CSS size × DPR (actual pixels)
         canvas.width = Math.floor(cssWidth * dpr);
         canvas.height = Math.floor(cssHeight * dpr);
-
-        // CSS display size stays at logical pixels so layout is unaffected
         canvas.style.width = `${cssWidth}px`;
         canvas.style.height = `${cssHeight}px`;
 
-        // Report CSS dimensions (not physical) so overlay positioning stays correct
         onDimensionsRef.current?.(cssWidth, cssHeight);
 
         const ctx = canvas.getContext('2d');
         if (!ctx || cancelled) return;
 
-        // Scale context so PDF renders at full DPR resolution
         ctx.scale(dpr, dpr);
 
-        const hiDpiViewport = page.getViewport({ scale });
-        renderTask = page.render({ canvas, canvasContext: ctx, viewport: hiDpiViewport });
+        renderTask = page.render({ canvasContext: ctx, viewport });
         await renderTask.promise;
 
         if (!cancelled) setRendered(true);
       } catch (err: unknown) {
         if (cancelled) return;
         const msg = err instanceof Error ? err.message : String(err);
-        if (msg.includes('cancel') || msg.includes('Cancel')) return;
+        if (msg.toLowerCase().includes('cancel')) return;
         console.error('[PdfPageRenderer]', msg);
         setError(msg);
         setRendered(true);
@@ -107,25 +99,34 @@ export function PdfPageRenderer({
         }}
       />
       {!rendered && !error && (
-        <div
-          style={{
-            position: 'absolute', inset: 0,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: '#f9fafb',
-            minHeight: 400,
-          }}
-        >
-          <div style={{ textAlign: 'center', color: '#9ca3af' }}>
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ margin: '0 auto 8px' }}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-            </svg>
-            <p style={{ fontSize: 13 }}>Rendering page…</p>
+        <div style={{
+          position: 'absolute', inset: 0,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'var(--color-surface)',
+          minHeight: 400,
+        }}>
+          <div style={{ textAlign: 'center', color: 'var(--color-text-disabled)' }}>
+            <div
+              className="animate-spin"
+              style={{
+                width: 24, height: 24,
+                border: '2px solid var(--color-border)',
+                borderTopColor: 'var(--color-primary)',
+                borderRadius: '50%',
+                margin: '0 auto 8px',
+              }}
+            />
+            <p style={{ fontSize: 12 }}>Rendering…</p>
           </div>
         </div>
       )}
       {error && (
-        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fef2f2', minHeight: 200 }}>
-          <p style={{ fontSize: 12, color: '#ef4444', padding: '0 16px', textAlign: 'center' }}>
+        <div style={{
+          position: 'absolute', inset: 0,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: '#fef2f2', minHeight: 200,
+        }}>
+          <p style={{ fontSize: 12, color: 'var(--color-danger)', padding: '0 16px', textAlign: 'center' }}>
             ⚠ Render error: {error}
           </p>
         </div>

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useStudioStore } from '@/stores/studio.store';
-import { Settings, Type, Calendar, PenLine, Trash2, ChevronRight, X } from 'lucide-react';
+import { Settings, Type, Calendar, PenLine, Trash2, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { FONT_FAMILIES, DATE_FORMATS } from '@/lib/constants';
 import { formatDate } from '@/lib/utils';
 import type { TextField, DateField } from '@/types';
@@ -12,77 +12,94 @@ export function PropertiesPanel() {
   const selected = elements.find((e) => e.id === selectedId);
   const [open, setOpen] = useState(true);
 
-  const ToggleBtn = (
-    <button
-      onClick={() => setOpen((v) => !v)}
-      className="absolute -left-8 top-3 w-7 h-7 items-center justify-center rounded-l-lg transition-colors z-10 hidden sm:flex"
-      style={{
-        background: 'var(--color-background)',
-        border: '1px solid var(--color-border)',
-        borderRight: 'none',
-        color: 'var(--color-text-secondary)',
-      }}
-      title={open ? 'Close properties' : 'Open properties'}
-    >
-      <ChevronRight
-        className="w-3.5 h-3.5 transition-transform duration-200"
-        style={{ transform: open ? 'rotate(0deg)' : 'rotate(180deg)' }}
-      />
-    </button>
-  );
-
-  if (!open) {
-    return (
-      <aside
-        className="relative shrink-0 hidden sm:flex flex-col"
-        style={{ width: 32, borderLeft: '1px solid var(--color-border)', background: 'var(--color-background)' }}
+  return (
+    <div className="hidden sm:flex shrink-0 relative">
+      {/* Toggle tab */}
+      <button
+        onClick={() => setOpen((v) => !v)}
+        title={open ? 'Hide properties' : 'Show properties'}
+        className="absolute top-4 -left-7 z-20 flex items-center justify-center w-7 h-7 rounded-l-lg"
+        style={{
+          background: 'var(--color-background)',
+          border: '1px solid var(--color-border)',
+          borderRight: 'none',
+          color: 'var(--color-text-secondary)',
+          boxShadow: '-2px 0 6px rgba(0,0,0,0.04)',
+        }}
       >
-        {ToggleBtn}
-        <div className="flex-1 flex items-center justify-center"
-          style={{ writingMode: 'vertical-rl', textOrientation: 'mixed' }}>
-          <span className="label select-none"
-            style={{ transform: 'rotate(180deg)', fontSize: 10, letterSpacing: '0.08em', color: 'var(--color-text-disabled)' }}>
+        {open
+          ? <ChevronRight className="w-3.5 h-3.5" />
+          : <ChevronLeft className="w-3.5 h-3.5" />
+        }
+      </button>
+
+      {/* Panel body — open */}
+      {open && (
+        <aside
+          className="w-64 flex flex-col overflow-hidden"
+          style={{ borderLeft: '1px solid var(--color-border)', background: 'var(--color-background)' }}
+        >
+          {!selectedId || !selected ? (
+            <>
+              <div className="px-4 py-3 shrink-0" style={{ borderBottom: '1px solid var(--color-border)' }}>
+                <p className="label">Properties</p>
+              </div>
+              <div className="flex-1 flex flex-col items-center justify-center gap-3 p-6">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center"
+                  style={{ background: 'var(--color-surface)' }}>
+                  <Settings className="w-5 h-5" style={{ color: 'var(--color-border)' }} />
+                </div>
+                <p className="text-xs text-center leading-relaxed" style={{ color: 'var(--color-text-disabled)' }}>
+                  Select an element to edit its properties
+                </p>
+              </div>
+            </>
+          ) : (
+            <PanelContent
+              selected={selected}
+              updateElement={updateElement}
+              deleteElement={deleteElement}
+            />
+          )}
+        </aside>
+      )}
+
+      {/* Collapsed strip */}
+      {!open && (
+        <div
+          className="w-8 flex flex-col items-center justify-center"
+          style={{ borderLeft: '1px solid var(--color-border)', background: 'var(--color-background)' }}
+        >
+          <span
+            className="label select-none"
+            style={{
+              writingMode: 'vertical-rl',
+              transform: 'rotate(180deg)',
+              fontSize: 10,
+              letterSpacing: '0.08em',
+              color: 'var(--color-text-disabled)',
+            }}
+          >
             Properties
           </span>
         </div>
-      </aside>
-    );
-  }
+      )}
+    </div>
+  );
+}
 
-  if (!selectedId || !selected) {
-    return (
-      <aside
-        className="relative w-64 shrink-0 flex-col hidden sm:flex"
-        style={{ borderLeft: '1px solid var(--color-border)', background: 'var(--color-background)' }}
-      >
-        {ToggleBtn}
-        <div className="px-4 py-3 shrink-0 flex items-center justify-between"
-          style={{ borderBottom: '1px solid var(--color-border)' }}>
-          <p className="label">Properties</p>
-        </div>
-        <div className="flex-1 flex flex-col items-center justify-center gap-3 p-6">
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center"
-            style={{ background: 'var(--color-surface)' }}>
-            <Settings className="w-5 h-5" style={{ color: 'var(--color-border)' }} />
-          </div>
-          <p className="text-xs text-center leading-relaxed" style={{ color: 'var(--color-text-disabled)' }}>
-            Select an element to edit its properties
-          </p>
-        </div>
-      </aside>
-    );
-  }
-
+function PanelContent({
+  selected, updateElement, deleteElement,
+}: {
+  selected: ReturnType<typeof useStudioStore.getState>['elements'][number];
+  updateElement: ReturnType<typeof useStudioStore.getState>['updateElement'];
+  deleteElement: ReturnType<typeof useStudioStore.getState>['deleteElement'];
+}) {
   const ElementIcon = selected.type === 'text' ? Type : selected.type === 'date' ? Calendar : PenLine;
   const elementLabel = selected.type === 'text' ? 'Text Field' : selected.type === 'date' ? 'Date Field' : 'Signature';
 
   return (
-    <aside
-      className="relative w-64 shrink-0 flex-col overflow-hidden hidden sm:flex"
-      style={{ borderLeft: '1px solid var(--color-border)', background: 'var(--color-background)' }}
-    >
-      {ToggleBtn}
-
+    <>
       <div className="px-4 py-3 flex items-center justify-between shrink-0"
         style={{ borderBottom: '1px solid var(--color-border)' }}>
         <div className="flex items-center gap-2">
@@ -94,8 +111,14 @@ export function PropertiesPanel() {
           className="p-1.5 rounded-lg transition-colors"
           style={{ color: 'var(--color-text-secondary)' }}
           title="Delete element"
-          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = '#FEF2F2'; (e.currentTarget as HTMLElement).style.color = 'var(--color-danger)'; }}
-          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'var(--color-text-secondary)'; }}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLElement).style.background = '#FEF2F2';
+            (e.currentTarget as HTMLElement).style.color = 'var(--color-danger)';
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLElement).style.background = 'transparent';
+            (e.currentTarget as HTMLElement).style.color = 'var(--color-text-secondary)';
+          }}
         >
           <Trash2 className="w-3.5 h-3.5" />
         </button>
@@ -118,9 +141,11 @@ export function PropertiesPanel() {
         {selected.type === 'text' && (
           <>
             <Section title="Content">
-              <textarea value={(selected as TextField).content}
+              <textarea
+                value={(selected as TextField).content}
                 onChange={(e) => updateElement(selected.id, { content: e.target.value })}
-                rows={3} className="input resize-none" style={{ fontSize: 12 }} />
+                rows={3} className="input resize-none" style={{ fontSize: 12 }}
+              />
             </Section>
             <TextStyleSection element={selected as TextField} onChange={(u) => updateElement(selected.id, u)} />
           </>
@@ -129,9 +154,14 @@ export function PropertiesPanel() {
         {selected.type === 'date' && (
           <>
             <Section title="Format">
-              <select value={(selected as DateField).format}
-                onChange={(e) => updateElement(selected.id, { format: e.target.value, content: formatDate(new Date(), e.target.value) })}
-                className="input" style={{ fontSize: 12 }}>
+              <select
+                value={(selected as DateField).format}
+                onChange={(e) => updateElement(selected.id, {
+                  format: e.target.value,
+                  content: formatDate(new Date(), e.target.value),
+                })}
+                className="input" style={{ fontSize: 12 }}
+              >
                 {DATE_FORMATS.map((f) => <option key={f} value={f}>{f}</option>)}
               </select>
             </Section>
@@ -141,14 +171,15 @@ export function PropertiesPanel() {
 
         {selected.type === 'signature' && (
           <Section title="Preview">
-            <div className="rounded-lg p-3" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+            <div className="rounded-lg p-3"
+              style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={selected.dataUrl} alt="Signature preview" className="w-full h-14 object-contain" />
             </div>
           </Section>
         )}
       </div>
-    </aside>
+    </>
   );
 }
 
@@ -176,11 +207,14 @@ export function MobilePropertiesSheet() {
       {open && (
         <>
           <div className="fixed inset-0 z-40 bg-black/30 sm:hidden" onClick={() => setOpen(false)} />
-          <div className="fixed bottom-0 left-0 right-0 z-50 sm:hidden rounded-t-2xl overflow-hidden"
-            style={{ background: 'var(--color-background)', boxShadow: '0 -4px 24px rgba(0,0,0,0.12)', maxHeight: '70vh' }}>
+          <div
+            className="fixed bottom-0 left-0 right-0 z-50 sm:hidden rounded-t-2xl overflow-hidden"
+            style={{ background: 'var(--color-background)', boxShadow: '0 -4px 24px rgba(0,0,0,0.12)', maxHeight: '70vh' }}
+          >
             <div className="flex justify-center pt-3 pb-1">
               <div className="w-10 h-1 rounded-full" style={{ background: 'var(--color-border)' }} />
             </div>
+
             <div className="flex items-center justify-between px-4 py-2"
               style={{ borderBottom: '1px solid var(--color-border)' }}>
               <div className="flex items-center gap-2">
@@ -188,12 +222,18 @@ export function MobilePropertiesSheet() {
                 <p className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>{elementLabel}</p>
               </div>
               <div className="flex items-center gap-2">
-                <button onClick={() => { deleteElement(selected.id); setOpen(false); }}
-                  className="p-1.5 rounded-lg" style={{ color: 'var(--color-danger)', background: '#FEF2F2' }}>
+                <button
+                  onClick={() => { deleteElement(selected.id); setOpen(false); }}
+                  className="p-1.5 rounded-lg"
+                  style={{ color: 'var(--color-danger)', background: '#FEF2F2' }}
+                >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
-                <button onClick={() => setOpen(false)} className="p-1.5 rounded-lg"
-                  style={{ color: 'var(--color-text-secondary)', background: 'var(--color-surface)' }}>
+                <button
+                  onClick={() => setOpen(false)}
+                  className="p-1.5 rounded-lg"
+                  style={{ color: 'var(--color-text-secondary)', background: 'var(--color-surface)' }}
+                >
                   <X className="w-3.5 h-3.5" />
                 </button>
               </div>
@@ -228,7 +268,10 @@ export function MobilePropertiesSheet() {
                 <>
                   <Section title="Format">
                     <select value={(selected as DateField).format}
-                      onChange={(e) => updateElement(selected.id, { format: e.target.value, content: formatDate(new Date(), e.target.value) })}
+                      onChange={(e) => updateElement(selected.id, {
+                        format: e.target.value,
+                        content: formatDate(new Date(), e.target.value),
+                      })}
                       className="input" style={{ fontSize: 12 }}>
                       {DATE_FORMATS.map((f) => <option key={f} value={f}>{f}</option>)}
                     </select>
@@ -239,7 +282,8 @@ export function MobilePropertiesSheet() {
 
               {selected.type === 'signature' && (
                 <Section title="Preview">
-                  <div className="rounded-lg p-3" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+                  <div className="rounded-lg p-3"
+                    style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={selected.dataUrl} alt="Signature preview" className="w-full h-14 object-contain" />
                   </div>
@@ -262,20 +306,27 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function NumberInput({ label, value, min, onChange }: { label: string; value: number; min?: number; onChange: (v: number) => void }) {
+function NumberInput({ label, value, min, onChange }: {
+  label: string; value: number; min?: number; onChange: (v: number) => void;
+}) {
   return (
     <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg"
       style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
       <span className="text-xs font-medium w-3.5 shrink-0" style={{ color: 'var(--color-text-secondary)' }}>{label}</span>
-      <input type="number" value={value} min={min}
+      <input
+        type="number" value={value} min={min}
         onChange={(e) => onChange(Number(e.target.value))}
         className="flex-1 min-w-0 bg-transparent focus:outline-none text-xs"
-        style={{ color: 'var(--color-text-primary)' }} />
+        style={{ color: 'var(--color-text-primary)' }}
+      />
     </div>
   );
 }
 
-function TextStyleSection({ element, onChange }: { element: TextField | DateField; onChange: (u: Partial<TextField | DateField>) => void }) {
+function TextStyleSection({ element, onChange }: {
+  element: TextField | DateField;
+  onChange: (u: Partial<TextField | DateField>) => void;
+}) {
   return (
     <Section title="Typography">
       <div className="space-y-2">

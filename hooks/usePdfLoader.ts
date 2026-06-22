@@ -17,11 +17,14 @@ export function usePdfLoader(): UsePdfLoaderReturn {
     setLoading(true);
     setError(null);
     try {
-      const { getDocument, GlobalWorkerOptions } = await import('pdfjs-dist');
-      GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
+      const pdfjsLib = await import('pdfjs-dist');
+
+      // Use local worker bundled in public/ — v4.4.168
+      pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
       const arrayBuffer = await file.arrayBuffer();
-      const pdf = await getDocument({ data: arrayBuffer }).promise;
+      const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) });
+      const pdf = await loadingTask.promise;
 
       const pages = await Promise.all(
         Array.from({ length: pdf.numPages }, async (_, i) => {
