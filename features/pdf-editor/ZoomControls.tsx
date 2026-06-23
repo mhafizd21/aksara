@@ -7,34 +7,44 @@ import { clampValue } from '@/lib/utils';
 
 export function ZoomControls() {
   const { scale, setScale } = useStudioStore();
-  const zoom = (delta: number) => setScale(clampValue(Math.round((scale + delta) * 100) / 100, MIN_SCALE, MAX_SCALE));
+
+  const zoom = (delta: number) => {
+    setScale(clampValue(Math.round((scale + delta) * 100) / 100, MIN_SCALE, MAX_SCALE));
+  };
+
   const percent = Math.round(scale * 100);
   const presets = [50, 75, 100, 125, 150, 200];
 
   const iconBtn = (disabled: boolean): React.CSSProperties => ({
-    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 6,
-    borderRadius: 8, transition: 'background 0.15s', border: 'none',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    padding: 6, borderRadius: 8, transition: 'background 0.15s', border: 'none',
     color: disabled ? 'var(--color-text-disabled)' : 'var(--color-text-secondary)',
     cursor: disabled ? 'not-allowed' : 'pointer', background: 'transparent',
+    minWidth: 32, minHeight: 32,
   });
 
   return (
-    <footer className="h-11 flex items-center justify-center gap-1 px-4 shrink-0"
-      style={{ background: 'var(--color-background)', borderTop: '1px solid var(--color-border)' }}>
-      <button onClick={() => zoom(-SCALE_STEP)} disabled={scale <= MIN_SCALE} style={iconBtn(scale <= MIN_SCALE)} title="Zoom out"
+    <footer
+      className="h-11 flex items-center justify-center gap-1 px-4 shrink-0"
+      style={{ background: 'var(--color-background)', borderTop: '1px solid var(--color-border)' }}
+    >
+      <button onClick={() => zoom(-SCALE_STEP)} disabled={scale <= MIN_SCALE}
+        style={iconBtn(scale <= MIN_SCALE)} title="Zoom out (−)"
         onMouseEnter={(e) => { if (scale > MIN_SCALE) (e.currentTarget as HTMLElement).style.background = 'var(--color-surface)'; }}
         onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
         <ZoomOut className="w-4 h-4" />
       </button>
 
       <div className="relative group">
-        <button className="flex items-center gap-1 px-3 py-1 rounded-lg min-w-[56px] justify-center transition-colors"
-          style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-primary)' }}
+        <button
+          className="flex items-center gap-1 px-3 py-1 rounded-lg transition-all min-w-[56px] justify-center"
+          style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text-primary)', background: 'transparent', minHeight: 32 }}
           onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--color-surface)'; }}
           onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
           {percent}%
         </button>
-        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 overflow-hidden hidden group-hover:block z-50 min-w-[80px]"
+        <div
+          className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 overflow-hidden hidden group-hover:block z-50 min-w-[80px]"
           style={{ background: 'var(--color-background)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-dropdown)', boxShadow: 'var(--shadow-md)' }}>
           {presets.map((p) => (
             <button key={p} onClick={() => setScale(p / 100)}
@@ -48,7 +58,8 @@ export function ZoomControls() {
         </div>
       </div>
 
-      <button onClick={() => zoom(SCALE_STEP)} disabled={scale >= MAX_SCALE} style={iconBtn(scale >= MAX_SCALE)} title="Zoom in"
+      <button onClick={() => zoom(SCALE_STEP)} disabled={scale >= MAX_SCALE}
+        style={iconBtn(scale >= MAX_SCALE)} title="Zoom in (+)"
         onMouseEnter={(e) => { if (scale < MAX_SCALE) (e.currentTarget as HTMLElement).style.background = 'var(--color-surface)'; }}
         onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
         <ZoomIn className="w-4 h-4" />

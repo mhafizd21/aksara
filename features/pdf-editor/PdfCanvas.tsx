@@ -5,10 +5,12 @@ import { Clipboard } from 'lucide-react';
 import { useStudioStore } from '@/stores/studio.store';
 import { PdfPageRenderer } from '@/features/pdf-viewer/PdfPageRenderer';
 import { ElementOverlay } from '@/features/pdf-editor/ElementOverlay';
+import { MIN_SCALE, MAX_SCALE } from '@/lib/constants';
+import { clampValue } from '@/lib/utils';
 
 export function PdfCanvas() {
   const {
-    document: pdfDoc, currentPage, scale, elements,
+    document: pdfDoc, currentPage, scale, setScale, elements,
     activeToolMode, setSelectedId,
     addTextField, addDateField, setActiveToolMode,
     pendingSignatureDataUrl, pendingSignatureSize,
@@ -17,9 +19,13 @@ export function PdfCanvas() {
   } = useStudioStore();
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const [ghostPos, setGhostPos] = useState<{ x: number; y: number } | null>(null);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; elX: number; elY: number } | null>(null);
+
+  const pinchRef = useRef<{ dist: number; scale: number } | null>(null);
+  const isPinchingRef = useRef(false);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const touchPosRef = useRef<{ x: number; y: number; elX: number; elY: number } | null>(null);
 
@@ -64,14 +70,12 @@ export function PdfCanvas() {
       setGhostPos(null);
       return;
     }
-
     if (activeToolMode === 'select') {
       if (e.target === containerRef.current || (e.target as HTMLElement).closest('[data-element-overlay]') === null) {
         setSelectedId(null);
       }
       return;
     }
-
     if (activeToolMode === 'text') { addTextField(currentPage, clickX, clickY); setActiveToolMode('select'); }
     else if (activeToolMode === 'date') { addDateField(currentPage, clickX, clickY); setActiveToolMode('select'); }
   }, [activeToolMode, isPlacingSignature, currentPage, scale, addTextField, addDateField,
@@ -82,14 +86,20 @@ export function PdfCanvas() {
     e.preventDefault();
     if (!containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
-    setCtxMenu({
-      x: e.clientX, y: e.clientY,
-      elX: (e.clientX - rect.left) / scale,
-      elY: (e.clientY - rect.top) / scale,
-    });
+    setCtxMenu({ x: e.clientX, y: e.clientY, elX: (e.clientX - rect.left) / scale, elY: (e.clientY - rect.top) / scale });
   }, [scale]);
 
+  const getTouchDist = (t1: React.Touch, t2: React.Touch) =>
+    Math.sqrt((t1.clientX - t2.clientX) ** 2 + (t1.clientY - t2.clientY) ** 2);
+
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      isPinchingRef.current = true;
+      if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+      pinchRef.current = { dist: getTouchDist(e.touches[0], e.touches[1]), scale };
+      return;
+    }
+
     if ((e.target as HTMLElement).closest('[data-element-overlay]')) return;
     if (isPlacingSignature) return;
 
@@ -102,34 +112,53 @@ export function PdfCanvas() {
       elY: (t.clientY - rect.top) / scale,
     };
     touchPosRef.current = pos;
+    isPinchingRef.current = false;
 
     longPressTimer.current = setTimeout(() => {
       setCtxMenu(pos);
     }, 600);
   }, [isPlacingSignature, scale]);
 
-  const handleTouchEnd = useCallback(() => {
-    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
-  }, []);
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (e.touches.length === 2 && pinchRef.current) {
+      e.preventDefault();
+      const newDist = getTouchDist(e.touches[0], e.touches[1]);
+      const ratio = newDist / pinchRef.current.dist;
+      const newScale = clampValue(
+        Math.round(pinchRef.current.scale * ratio * 100) / 100,
+        MIN_SCALE, MAX_SCALE
+      );
+      setScale(newScale);
+      return;
+    }
 
-  const handleTouchMove = useCallback(() => {
     if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
-  }, []);
 
-  const handleTouchTap = useCallback((e: React.TouchEvent) => {
-    if (!isPlacingSignature || !containerRef.current) return;
-    const t = e.changedTouches[0];
-    const rect = containerRef.current.getBoundingClientRect();
-    placeSignatureAtPosition(currentPage, (t.clientX - rect.left) / scale, (t.clientY - rect.top) / scale);
-    setGhostPos(null);
+    if (isPlacingSignature && containerRef.current) {
+      const t = e.touches[0];
+      const rect = containerRef.current.getBoundingClientRect();
+      setGhostPos({ x: t.clientX - rect.left, y: t.clientY - rect.top });
+    }
+  }, [isPlacingSignature, setScale]);
+
+  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+    if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+
+    if (e.touches.length < 2) {
+      pinchRef.current = null;
+      setTimeout(() => { isPinchingRef.current = false; }, 100);
+      return;
+    }
+
+    if (isPinchingRef.current) return;
+
+    if (isPlacingSignature && containerRef.current) {
+      const t = e.changedTouches[0];
+      const rect = containerRef.current.getBoundingClientRect();
+      placeSignatureAtPosition(currentPage, (t.clientX - rect.left) / scale, (t.clientY - rect.top) / scale);
+      setGhostPos(null);
+    }
   }, [isPlacingSignature, currentPage, scale, placeSignatureAtPosition]);
-
-  const handleTouchMoveGhost = useCallback((e: React.TouchEvent) => {
-    if (!isPlacingSignature || !containerRef.current) return;
-    const t = e.touches[0];
-    const rect = containerRef.current.getBoundingClientRect();
-    setGhostPos({ x: t.clientX - rect.left, y: t.clientY - rect.top });
-  }, [isPlacingSignature]);
 
   const pageElements = elements.filter((el) => el.pageIndex === currentPage);
 
@@ -145,9 +174,11 @@ export function PdfCanvas() {
   if (!pdfDoc) return null;
 
   return (
-    <div className="flex-1 overflow-auto flex items-start justify-center p-4 sm:p-8"
-      style={{ background: '#F1F5F9' }}>
-
+    <div
+      ref={scrollRef}
+      className="flex-1 overflow-auto flex items-start justify-center p-4 sm:p-8"
+      style={{ background: '#F1F5F9' }}
+    >
       {isPlacingSignature && (
         <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium pointer-events-none"
           style={{ background: 'var(--color-primary)', color: '#fff', boxShadow: 'var(--shadow-md)' }}>
@@ -165,8 +196,8 @@ export function PdfCanvas() {
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
         onTouchStart={handleTouchStart}
-        onTouchEnd={(e) => { handleTouchEnd(); if (isPlacingSignature) handleTouchTap(e); }}
-        onTouchMove={(e) => { handleTouchMove(); handleTouchMoveGhost(e); }}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
         className="relative select-none"
         style={{
           cursor,
@@ -226,11 +257,7 @@ export function PdfCanvas() {
             onClick={() => { pasteElement(ctxMenu.elX, ctxMenu.elY); setCtxMenu(null); }}
             disabled={!hasClipboard}
             className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm transition-colors"
-            style={{
-              color: 'var(--color-text-primary)',
-              opacity: !hasClipboard ? 0.4 : 1,
-              cursor: !hasClipboard ? 'not-allowed' : 'pointer',
-            }}
+            style={{ color: 'var(--color-text-primary)', opacity: !hasClipboard ? 0.4 : 1, cursor: !hasClipboard ? 'not-allowed' : 'pointer' }}
             onMouseEnter={(e) => { if (hasClipboard) (e.currentTarget as HTMLElement).style.background = 'var(--color-surface)'; }}
             onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
           >

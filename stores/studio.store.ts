@@ -21,6 +21,7 @@ interface StudioState {
   pendingSignatureDataUrl: string | null;
   pendingSignatureSize: { width: number; height: number } | null;
   clipboard: PdfElement | null;
+  lockedIds: Set<string>;
   history: HistoryEntry[];
   historyIndex: number;
 
@@ -44,6 +45,8 @@ interface StudioState {
   copyElement: (id: string) => void;
   cutElement: (id: string) => void;
   pasteElement: (x?: number, y?: number) => void;
+  toggleLock: (id: string) => void;
+  isLocked: (id: string) => boolean;
   undo: () => void;
   redo: () => void;
   pushHistory: () => void;
@@ -66,6 +69,7 @@ export const useStudioStore = create<StudioState>()(
     pendingSignatureDataUrl: null,
     pendingSignatureSize: null,
     clipboard: null,
+    lockedIds: new Set<string>(),
     history: [{ elements: [] }],
     historyIndex: 0,
 
@@ -73,6 +77,7 @@ export const useStudioStore = create<StudioState>()(
       s.document = doc;
       s.currentPage = 0;
       s.elements = [];
+      s.lockedIds = new Set<string>();
       s.downloadFileName = doc ? doc.file.name.replace(/\.pdf$/i, '') + '_signed' : '';
     }),
     setCurrentPage: (page) => set((s) => { s.currentPage = page; }),
@@ -83,6 +88,13 @@ export const useStudioStore = create<StudioState>()(
     setSelectedId: (id) => set((s) => { s.selectedId = id; }),
     setIsExporting: (v) => set((s) => { s.isExporting = v; }),
     setDownloadFileName: (name) => set((s) => { s.downloadFileName = name; }),
+
+    toggleLock: (id) => set((s) => {
+      if (s.lockedIds.has(id)) { s.lockedIds.delete(id); }
+      else { s.lockedIds.add(id); s.selectedId = null; }
+    }),
+
+    isLocked: (id) => get().lockedIds.has(id),
 
     pushHistory: () => {
       const { elements, history, historyIndex } = get();
@@ -132,9 +144,7 @@ export const useStudioStore = create<StudioState>()(
           y: y !== undefined ? Math.max(0, y - DEFAULT_TEXT_ELEMENT.height / 2) : 100,
         },
         size: { width: DEFAULT_TEXT_ELEMENT.width, height: DEFAULT_TEXT_ELEMENT.height },
-        fontSize: DEFAULT_TEXT_ELEMENT.fontSize,
-        fontFamily: DEFAULT_TEXT_ELEMENT.fontFamily,
-        color: DEFAULT_TEXT_ELEMENT.color,
+        fontSize: DEFAULT_TEXT_ELEMENT.fontSize, fontFamily: DEFAULT_TEXT_ELEMENT.fontFamily, color: DEFAULT_TEXT_ELEMENT.color,
       };
       set((s) => { s.elements.push(el); s.selectedId = el.id; s.activeToolMode = 'select'; });
     },
@@ -149,10 +159,8 @@ export const useStudioStore = create<StudioState>()(
           y: y !== undefined ? Math.max(0, y - DEFAULT_DATE_ELEMENT.height / 2) : 150,
         },
         size: { width: DEFAULT_DATE_ELEMENT.width, height: DEFAULT_DATE_ELEMENT.height },
-        fontSize: DEFAULT_DATE_ELEMENT.fontSize,
-        fontFamily: DEFAULT_DATE_ELEMENT.fontFamily,
-        color: DEFAULT_DATE_ELEMENT.color,
-        format: DEFAULT_DATE_ELEMENT.format,
+        fontSize: DEFAULT_DATE_ELEMENT.fontSize, fontFamily: DEFAULT_DATE_ELEMENT.fontFamily,
+        color: DEFAULT_DATE_ELEMENT.color, format: DEFAULT_DATE_ELEMENT.format,
       };
       set((s) => { s.elements.push(el); s.selectedId = el.id; s.activeToolMode = 'select'; });
     },
@@ -168,6 +176,7 @@ export const useStudioStore = create<StudioState>()(
       get().pushHistory();
       set((s) => {
         s.elements = s.elements.filter((e) => e.id !== id);
+        s.lockedIds.delete(id);
         if (s.selectedId === id) s.selectedId = null;
       });
     },
@@ -176,11 +185,7 @@ export const useStudioStore = create<StudioState>()(
       get().pushHistory();
       const el = get().elements.find((e) => e.id === id);
       if (!el) return;
-      const newEl: PdfElement = {
-        ...JSON.parse(JSON.stringify(el)),
-        id: generateId(),
-        position: { x: el.position.x + 20, y: el.position.y + 20 },
-      };
+      const newEl: PdfElement = { ...JSON.parse(JSON.stringify(el)), id: generateId(), position: { x: el.position.x + 20, y: el.position.y + 20 } };
       set((s) => { s.elements.push(newEl); s.selectedId = newEl.id; });
     },
 
@@ -197,6 +202,7 @@ export const useStudioStore = create<StudioState>()(
       set((s) => {
         s.clipboard = JSON.parse(JSON.stringify(el));
         s.elements = s.elements.filter((e) => e.id !== id);
+        s.lockedIds.delete(id);
         if (s.selectedId === id) s.selectedId = null;
       });
     },
@@ -220,22 +226,14 @@ export const useStudioStore = create<StudioState>()(
       const { historyIndex, history } = get();
       if (historyIndex <= 0) return;
       const prev = history[historyIndex - 1];
-      set((s) => {
-        s.historyIndex = historyIndex - 1;
-        s.elements = JSON.parse(JSON.stringify(prev.elements));
-        s.selectedId = null;
-      });
+      set((s) => { s.historyIndex = historyIndex - 1; s.elements = JSON.parse(JSON.stringify(prev.elements)); s.selectedId = null; });
     },
 
     redo: () => {
       const { historyIndex, history } = get();
       if (historyIndex >= history.length - 1) return;
       const next = history[historyIndex + 1];
-      set((s) => {
-        s.historyIndex = historyIndex + 1;
-        s.elements = JSON.parse(JSON.stringify(next.elements));
-        s.selectedId = null;
-      });
+      set((s) => { s.historyIndex = historyIndex + 1; s.elements = JSON.parse(JSON.stringify(next.elements)); s.selectedId = null; });
     },
   }))
 );

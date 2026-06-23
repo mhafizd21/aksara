@@ -14,12 +14,16 @@ export function usePdfLoader(): UsePdfLoaderReturn {
   const [error, setError] = useState<string | null>(null);
 
   const loadPdf = useCallback(async (file: File): Promise<PdfDocument | null> => {
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+    if (!isPdf) {
+      setError('Only PDF files are supported.');
+      return null;
+    }
+
     setLoading(true);
     setError(null);
     try {
       const pdfjsLib = await import('pdfjs-dist');
-
-      // Use local worker bundled in public/ — v4.4.168
       pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 
       const arrayBuffer = await file.arrayBuffer();
