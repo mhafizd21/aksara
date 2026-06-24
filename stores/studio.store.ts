@@ -21,7 +21,7 @@ interface StudioState {
   pendingSignatureDataUrl: string | null;
   pendingSignatureSize: { width: number; height: number } | null;
   clipboard: PdfElement | null;
-  lockedIds: Set<string>;
+  lockedIds: Record<string, boolean>;
   history: HistoryEntry[];
   historyIndex: number;
 
@@ -69,7 +69,7 @@ export const useStudioStore = create<StudioState>()(
     pendingSignatureDataUrl: null,
     pendingSignatureSize: null,
     clipboard: null,
-    lockedIds: new Set<string>(),
+    lockedIds: {},
     history: [{ elements: [] }],
     historyIndex: 0,
 
@@ -77,7 +77,7 @@ export const useStudioStore = create<StudioState>()(
       s.document = doc;
       s.currentPage = 0;
       s.elements = [];
-      s.lockedIds = new Set<string>();
+      s.lockedIds = {};
       s.downloadFileName = doc ? doc.file.name.replace(/\.pdf$/i, '') + '_signed' : '';
     }),
     setCurrentPage: (page) => set((s) => { s.currentPage = page; }),
@@ -90,11 +90,15 @@ export const useStudioStore = create<StudioState>()(
     setDownloadFileName: (name) => set((s) => { s.downloadFileName = name; }),
 
     toggleLock: (id) => set((s) => {
-      if (s.lockedIds.has(id)) { s.lockedIds.delete(id); }
-      else { s.lockedIds.add(id); s.selectedId = null; }
+      if (s.lockedIds[id]) {
+        delete s.lockedIds[id];
+      } else {
+        s.lockedIds[id] = true;
+        s.selectedId = null;
+      }
     }),
 
-    isLocked: (id) => get().lockedIds.has(id),
+    isLocked: (id) => !!get().lockedIds[id],
 
     pushHistory: () => {
       const { elements, history, historyIndex } = get();
@@ -125,14 +129,20 @@ export const useStudioStore = create<StudioState>()(
         size: { width, height },
       };
       set((s) => {
-        s.elements.push(el); s.selectedId = el.id;
+        s.elements.push(el);
+        s.selectedId = el.id;
         s.activeToolMode = 'select';
-        s.pendingSignatureDataUrl = null; s.pendingSignatureSize = null;
+        s.pendingSignatureDataUrl = null;
+        s.pendingSignatureSize = null;
       });
     },
 
     cancelSignaturePlacement: () => {
-      set((s) => { s.pendingSignatureDataUrl = null; s.pendingSignatureSize = null; s.activeToolMode = 'select'; });
+      set((s) => {
+        s.pendingSignatureDataUrl = null;
+        s.pendingSignatureSize = null;
+        s.activeToolMode = 'select';
+      });
     },
 
     addTextField: (pageIndex, x, y) => {
@@ -144,7 +154,9 @@ export const useStudioStore = create<StudioState>()(
           y: y !== undefined ? Math.max(0, y - DEFAULT_TEXT_ELEMENT.height / 2) : 100,
         },
         size: { width: DEFAULT_TEXT_ELEMENT.width, height: DEFAULT_TEXT_ELEMENT.height },
-        fontSize: DEFAULT_TEXT_ELEMENT.fontSize, fontFamily: DEFAULT_TEXT_ELEMENT.fontFamily, color: DEFAULT_TEXT_ELEMENT.color,
+        fontSize: DEFAULT_TEXT_ELEMENT.fontSize,
+        fontFamily: DEFAULT_TEXT_ELEMENT.fontFamily,
+        color: DEFAULT_TEXT_ELEMENT.color,
       };
       set((s) => { s.elements.push(el); s.selectedId = el.id; s.activeToolMode = 'select'; });
     },
@@ -159,8 +171,10 @@ export const useStudioStore = create<StudioState>()(
           y: y !== undefined ? Math.max(0, y - DEFAULT_DATE_ELEMENT.height / 2) : 150,
         },
         size: { width: DEFAULT_DATE_ELEMENT.width, height: DEFAULT_DATE_ELEMENT.height },
-        fontSize: DEFAULT_DATE_ELEMENT.fontSize, fontFamily: DEFAULT_DATE_ELEMENT.fontFamily,
-        color: DEFAULT_DATE_ELEMENT.color, format: DEFAULT_DATE_ELEMENT.format,
+        fontSize: DEFAULT_DATE_ELEMENT.fontSize,
+        fontFamily: DEFAULT_DATE_ELEMENT.fontFamily,
+        color: DEFAULT_DATE_ELEMENT.color,
+        format: DEFAULT_DATE_ELEMENT.format,
       };
       set((s) => { s.elements.push(el); s.selectedId = el.id; s.activeToolMode = 'select'; });
     },
@@ -176,7 +190,7 @@ export const useStudioStore = create<StudioState>()(
       get().pushHistory();
       set((s) => {
         s.elements = s.elements.filter((e) => e.id !== id);
-        s.lockedIds.delete(id);
+        delete s.lockedIds[id];
         if (s.selectedId === id) s.selectedId = null;
       });
     },
@@ -185,7 +199,11 @@ export const useStudioStore = create<StudioState>()(
       get().pushHistory();
       const el = get().elements.find((e) => e.id === id);
       if (!el) return;
-      const newEl: PdfElement = { ...JSON.parse(JSON.stringify(el)), id: generateId(), position: { x: el.position.x + 20, y: el.position.y + 20 } };
+      const newEl: PdfElement = {
+        ...JSON.parse(JSON.stringify(el)),
+        id: generateId(),
+        position: { x: el.position.x + 20, y: el.position.y + 20 },
+      };
       set((s) => { s.elements.push(newEl); s.selectedId = newEl.id; });
     },
 
@@ -196,13 +214,14 @@ export const useStudioStore = create<StudioState>()(
     },
 
     cutElement: (id) => {
+      if (get().lockedIds[id]) return;
       const el = get().elements.find((e) => e.id === id);
       if (!el) return;
       get().pushHistory();
       set((s) => {
         s.clipboard = JSON.parse(JSON.stringify(el));
         s.elements = s.elements.filter((e) => e.id !== id);
-        s.lockedIds.delete(id);
+        delete s.lockedIds[id];
         if (s.selectedId === id) s.selectedId = null;
       });
     },
@@ -226,14 +245,22 @@ export const useStudioStore = create<StudioState>()(
       const { historyIndex, history } = get();
       if (historyIndex <= 0) return;
       const prev = history[historyIndex - 1];
-      set((s) => { s.historyIndex = historyIndex - 1; s.elements = JSON.parse(JSON.stringify(prev.elements)); s.selectedId = null; });
+      set((s) => {
+        s.historyIndex = historyIndex - 1;
+        s.elements = JSON.parse(JSON.stringify(prev.elements));
+        s.selectedId = null;
+      });
     },
 
     redo: () => {
       const { historyIndex, history } = get();
       if (historyIndex >= history.length - 1) return;
       const next = history[historyIndex + 1];
-      set((s) => { s.historyIndex = historyIndex + 1; s.elements = JSON.parse(JSON.stringify(next.elements)); s.selectedId = null; });
+      set((s) => {
+        s.historyIndex = historyIndex + 1;
+        s.elements = JSON.parse(JSON.stringify(next.elements));
+        s.selectedId = null;
+      });
     },
   }))
 );

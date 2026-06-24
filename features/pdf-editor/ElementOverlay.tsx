@@ -19,10 +19,11 @@ function getClient(e: MouseEvent | TouchEvent): { clientX: number; clientY: numb
 
 export function ElementOverlay({ element, scale }: ElementOverlayProps) {
   const { selectedId, setSelectedId, updateElement, deleteElement, duplicateElement,
-    copyElement, cutElement, pasteElement, clipboard, pushHistory,
-    toggleLock, isLocked } = useStudioStore();
+    copyElement, cutElement, pasteElement, clipboard, pushHistory, toggleLock } = useStudioStore();
+
+  // Reactive — re-renders when lockedIds changes
+  const locked = useStudioStore((s) => !!s.lockedIds[element.id]);
   const isSelected = selectedId === element.id;
-  const locked = isLocked(element.id);
 
   const dragStartRef = useRef<{ mouseX: number; mouseY: number; elX: number; elY: number } | null>(null);
   const resizeRef = useRef<{ handle: ResizeHandle; startMouseX: number; startMouseY: number; startX: number; startY: number; startW: number; startH: number } | null>(null);
@@ -97,7 +98,11 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
   const startResize = useCallback((clientX: number, clientY: number, handle: ResizeHandle) => {
     if (locked) return;
     pushHistory();
-    resizeRef.current = { handle, startMouseX: clientX, startMouseY: clientY, startX: element.position.x, startY: element.position.y, startW: element.size.width, startH: element.size.height };
+    resizeRef.current = {
+      handle, startMouseX: clientX, startMouseY: clientY,
+      startX: element.position.x, startY: element.position.y,
+      startW: element.size.width, startH: element.size.height,
+    };
 
     const applyResize = (cx: number, cy: number) => {
       if (!resizeRef.current) return;
@@ -127,26 +132,17 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
     window.addEventListener('touchend', onUp);
   }, [element, scale, locked, updateElement, pushHistory]);
 
-  const handleResizeMouseDown = useCallback((e: React.MouseEvent, handle: ResizeHandle) => {
-    e.stopPropagation(); e.preventDefault();
-    startResize(e.clientX, e.clientY, handle);
-  }, [startResize]);
-
-  const handleResizeTouchStart = useCallback((e: React.TouchEvent, handle: ResizeHandle) => {
-    e.stopPropagation(); e.preventDefault();
-    startResize(e.touches[0].clientX, e.touches[0].clientY, handle);
-  }, [startResize]);
-
   const handleResizeDispatch = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    e.stopPropagation(); e.preventDefault();
     const handle = e.currentTarget.dataset.handle as ResizeHandle;
-    if (handle) handleResizeMouseDown(e, handle);
-  }, [handleResizeMouseDown]);
+    if (handle) startResize(e.clientX, e.clientY, handle);
+  }, [startResize]);
 
   const handleResizeTouchDispatch = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
-    e.stopPropagation();
+    e.stopPropagation(); e.preventDefault();
     const handle = e.currentTarget.dataset.handle as ResizeHandle;
-    if (handle) handleResizeTouchStart(e, handle);
-  }, [handleResizeTouchStart]);
+    if (handle) startResize(e.touches[0].clientX, e.touches[0].clientY, handle);
+  }, [startResize]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault(); e.stopPropagation();
@@ -173,7 +169,7 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
 
   const ctxItems = [
     { label: locked ? 'Unlock' : 'Lock', icon: locked ? Unlock : Lock, onClick: () => { toggleLock(element.id); setCtxMenu(null); } },
-    { label: 'Copy', shortcut: '⌘C', icon: Copy, onClick: () => { copyElement(element.id); setCtxMenu(null); }, disabled: locked },
+    { label: 'Copy', shortcut: '⌘C', icon: Copy, onClick: () => { copyElement(element.id); setCtxMenu(null); }, disabled: false },
     { label: 'Cut', shortcut: '⌘X', icon: Scissors, onClick: () => { cutElement(element.id); setCtxMenu(null); }, disabled: locked },
     { label: 'Paste', shortcut: '⌘V', icon: Clipboard, disabled: !clipboard, onClick: () => { pasteElement(element.position.x + element.size.width + 10, element.position.y); setCtxMenu(null); } },
     { label: 'Duplicate', shortcut: '⌘D', icon: Clipboard, onClick: () => { duplicateElement(element.id); setCtxMenu(null); }, disabled: locked },
@@ -229,12 +225,12 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
             <div className="w-px h-3.5" style={{ background: 'var(--color-border)' }} />
             <FBtn icon={locked ? Unlock : Lock} title={locked ? 'Unlock' : 'Lock'}
               onClick={() => toggleLock(element.id)}
-              style={{ color: locked ? '#F59E0B' : 'var(--color-text-secondary)' }} />
+              iconStyle={{ color: locked ? '#F59E0B' : 'var(--color-text-secondary)' }} />
+            <FBtn icon={Copy} title="Copy (⌘C)" onClick={() => copyElement(element.id)} />
             {!locked && (
               <>
-                <FBtn icon={Copy} title="Copy" onClick={() => copyElement(element.id)} />
-                <FBtn icon={Scissors} title="Cut" onClick={() => cutElement(element.id)} />
-                <FBtn icon={Clipboard} title="Duplicate" onClick={() => duplicateElement(element.id)} />
+                <FBtn icon={Scissors} title="Cut (⌘X)" onClick={() => cutElement(element.id)} />
+                <FBtn icon={Clipboard} title="Duplicate (⌘D)" onClick={() => duplicateElement(element.id)} />
               </>
             )}
             <div className="w-px h-3.5" style={{ background: 'var(--color-border)' }} />
@@ -263,10 +259,10 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
 
       {ctxMenu && (
         <div
-          className="fixed z-[200] py-1 min-w-[180px]"
+          className="fixed z-[200] py-1 min-w-45"
           style={{
             left: Math.min(ctxMenu.x, window.innerWidth - 190),
-            top: Math.min(ctxMenu.y, window.innerHeight - 220),
+            top: Math.min(ctxMenu.y, window.innerHeight - 240),
             background: 'var(--color-background)',
             border: '1px solid var(--color-border)',
             borderRadius: 'var(--radius-dropdown)',
@@ -302,10 +298,9 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
   );
 }
 
-function FBtn({ icon: Icon, title, onClick, danger, style }: {
+function FBtn({ icon: Icon, title, onClick, danger, iconStyle }: {
   icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
-  title: string; onClick: () => void; danger?: boolean;
-  style?: React.CSSProperties;
+  title: string; onClick: () => void; danger?: boolean; iconStyle?: React.CSSProperties;
 }) {
   return (
     <button
@@ -318,7 +313,7 @@ function FBtn({ icon: Icon, title, onClick, danger, style }: {
       onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
     >
       <Icon className="w-3.5 h-3.5"
-        style={{ color: danger ? 'var(--color-danger)' : 'var(--color-text-secondary)', ...style }} />
+        style={{ color: danger ? 'var(--color-danger)' : 'var(--color-text-secondary)', ...iconStyle }} />
     </button>
   );
 }
