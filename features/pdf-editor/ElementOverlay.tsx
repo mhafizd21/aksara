@@ -41,9 +41,19 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
     return () => { window.removeEventListener('click', close); window.removeEventListener('contextmenu', close); };
   }, [ctxMenu]);
 
+  const startEditing = useCallback(() => {
+    setIsEditing(true);
+    setTimeout(() => {
+      editInputRef.current?.focus();
+      editInputRef.current?.select();
+    }, 0);
+  }, []);
+
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (isEditing) return; // don't drag while editing
     e.stopPropagation(); e.preventDefault();
+
+    const wasAlreadySelected = selectedId === element.id;
     setSelectedId(element.id);
     if (locked) return;
     didMoveRef.current = false;
@@ -57,10 +67,20 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
       const dy = (ev.clientY - dragStartRef.current.mouseY) / scale;
       updateElement(element.id, { position: { x: Math.max(0, dragStartRef.current.elX + dx), y: Math.max(0, dragStartRef.current.elY + dy) } });
     };
-    const onUp = () => { dragStartRef.current = null; setIsDragging(false); window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+    const onUp = () => {
+      dragStartRef.current = null;
+      setIsDragging(false);
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      // Click (no drag) on an already-selected text/date element -> edit directly,
+      // without requiring the Properties Panel.
+      if (!didMoveRef.current && wasAlreadySelected && (element.type === 'text' || element.type === 'date')) {
+        startEditing();
+      }
+    };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
-  }, [element, scale, locked, isEditing, setSelectedId, updateElement, pushHistory]);
+  }, [element, scale, locked, isEditing, selectedId, setSelectedId, updateElement, pushHistory]);
 
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     e.stopPropagation();
@@ -153,15 +173,6 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
     setIsEditing(true);
     setTimeout(() => { editInputRef.current?.focus(); editInputRef.current?.select(); }, 0);
   }, [locked, element.type]);
-
-  const startEditing = useCallback(() => {
-    setIsEditing(true);
-
-    setTimeout(() => {
-      editInputRef.current?.focus();
-      editInputRef.current?.select();
-    }, 0);
-  }, []);
 
   const lastTapRef = useRef(0);
 

@@ -14,6 +14,21 @@ function dataUrlToUint8Array(dataUrl: string): Uint8Array {
   return bytes;
 }
 
+function mapToStandardFont(fontFamily: string, StandardFonts: typeof import('pdf-lib').StandardFonts) {
+  const key = fontFamily.trim().toLowerCase();
+  switch (key) {
+    case 'times new roman':
+    case 'georgia':
+      return StandardFonts.TimesRoman;
+    case 'courier new':
+      return StandardFonts.Courier;
+    case 'arial':
+    case 'helvetica':
+    default:
+      return StandardFonts.Helvetica;
+  }
+}
+
 export function usePdfExport() {
   const { document: pdfDoc, elements, scale, setIsExporting, downloadFileName } = useStudioStore();
 
@@ -53,7 +68,8 @@ export function usePdfExport() {
           }
         } else if (el.type === 'text' || el.type === 'date') {
           const textEl = el as TextField | DateField;
-          const font = await doc.embedFont(StandardFonts.Helvetica);
+          const standardFont = mapToStandardFont(textEl.fontFamily, StandardFonts);
+          const font = await doc.embedFont(standardFont);
 
           const hexToRgb = (hex: string) => {
             const clean = hex.replace('#', '');
@@ -65,7 +81,7 @@ export function usePdfExport() {
           };
 
           const pdfFontSize = (textEl.fontSize / scale) * (pdfW / pageInfo.width);
-          const textY = pdfY + (pdfElH - pdfFontSize) / 2;
+          const textY = pdfY + (pdfElH - pdfFontSize) / 2 + pdfFontSize * 0.2;
 
           page.drawText(textEl.content, {
             x: pdfX,
