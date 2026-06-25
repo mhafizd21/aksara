@@ -13,6 +13,7 @@ interface StudioState {
   scale: number;
   elements: PdfElement[];
   selectedId: string | null;
+  selectedIds: string[];
   activeToolMode: 'select' | 'text' | 'date' | 'signature';
   signatureMode: SignatureMode;
   isSignatureModalOpen: boolean;
@@ -32,6 +33,10 @@ interface StudioState {
   setSignatureMode: (mode: SignatureMode) => void;
   setSignatureModalOpen: (open: boolean) => void;
   setSelectedId: (id: string | null) => void;
+  setSelectedIds: (ids: string[]) => void;
+  addToSelection: (id: string) => void;
+  removeFromSelection: (id: string) => void;
+  clearSelection: () => void;
   setIsExporting: (v: boolean) => void;
   setDownloadFileName: (name: string) => void;
   readySignatureForPlacement: (dataUrl: string, width: number, height: number) => void;
@@ -40,8 +45,11 @@ interface StudioState {
   addTextField: (pageIndex: number, x?: number, y?: number) => void;
   addDateField: (pageIndex: number, x?: number, y?: number) => void;
   updateElement: (id: string, updates: Partial<PdfElement>) => void;
+  updateSelectedElements: (updates: Partial<PdfElement>) => void;
   deleteElement: (id: string) => void;
+  deleteSelectedElements: () => void;
   duplicateElement: (id: string) => void;
+  duplicateSelectedElements: () => void;
   copyElement: (id: string) => void;
   cutElement: (id: string) => void;
   pasteElement: (x?: number, y?: number) => void;
@@ -61,6 +69,7 @@ export const useStudioStore = create<StudioState>()(
     scale: DEFAULT_SCALE,
     elements: [],
     selectedId: null,
+    selectedIds: [],
     activeToolMode: 'select',
     signatureMode: 'draw',
     isSignatureModalOpen: false,
@@ -78,6 +87,8 @@ export const useStudioStore = create<StudioState>()(
       s.currentPage = 0;
       s.elements = [];
       s.lockedIds = {};
+      s.selectedId = null;
+      s.selectedIds = [];
       s.downloadFileName = doc ? doc.file.name.replace(/\.pdf$/i, '') + '_signed' : '';
     }),
     setCurrentPage: (page) => set((s) => { s.currentPage = page; }),
@@ -85,7 +96,28 @@ export const useStudioStore = create<StudioState>()(
     setActiveToolMode: (mode) => set((s) => { s.activeToolMode = mode; }),
     setSignatureMode: (mode) => set((s) => { s.signatureMode = mode; }),
     setSignatureModalOpen: (open) => set((s) => { s.isSignatureModalOpen = open; }),
-    setSelectedId: (id) => set((s) => { s.selectedId = id; }),
+    setSelectedId: (id) => set((s) => {
+      s.selectedId = id;
+      s.selectedIds = id ? [id] : [];
+    }),
+    setSelectedIds: (ids) => set((s) => {
+      s.selectedIds = ids;
+      s.selectedId = ids.length === 1 ? ids[0] : ids.length > 0 ? ids[ids.length - 1] : null;
+    }),
+    addToSelection: (id) => set((s) => {
+      if (!s.selectedIds.includes(id)) {
+        s.selectedIds.push(id);
+      }
+      s.selectedId = id;
+    }),
+    removeFromSelection: (id) => set((s) => {
+      s.selectedIds = s.selectedIds.filter((i) => i !== id);
+      s.selectedId = s.selectedIds.length > 0 ? s.selectedIds[s.selectedIds.length - 1] : null;
+    }),
+    clearSelection: () => set((s) => {
+      s.selectedId = null;
+      s.selectedIds = [];
+    }),
     setIsExporting: (v) => set((s) => { s.isExporting = v; }),
     setDownloadFileName: (name) => set((s) => { s.downloadFileName = name; }),
 
@@ -95,6 +127,7 @@ export const useStudioStore = create<StudioState>()(
       } else {
         s.lockedIds[id] = true;
         s.selectedId = null;
+        s.selectedIds = s.selectedIds.filter((i) => i !== id);
       }
     }),
 
@@ -131,6 +164,7 @@ export const useStudioStore = create<StudioState>()(
       set((s) => {
         s.elements.push(el);
         s.selectedId = el.id;
+        s.selectedIds = [el.id];
         s.activeToolMode = 'select';
         s.pendingSignatureDataUrl = null;
         s.pendingSignatureSize = null;
@@ -158,7 +192,7 @@ export const useStudioStore = create<StudioState>()(
         fontFamily: DEFAULT_TEXT_ELEMENT.fontFamily,
         color: DEFAULT_TEXT_ELEMENT.color,
       };
-      set((s) => { s.elements.push(el); s.selectedId = el.id; s.activeToolMode = 'select'; });
+      set((s) => { s.elements.push(el); s.selectedId = el.id; s.selectedIds = [el.id]; s.activeToolMode = 'select'; });
     },
 
     addDateField: (pageIndex, x, y) => {
@@ -176,7 +210,7 @@ export const useStudioStore = create<StudioState>()(
         color: DEFAULT_DATE_ELEMENT.color,
         format: DEFAULT_DATE_ELEMENT.format,
       };
-      set((s) => { s.elements.push(el); s.selectedId = el.id; s.activeToolMode = 'select'; });
+      set((s) => { s.elements.push(el); s.selectedId = el.id; s.selectedIds = [el.id]; s.activeToolMode = 'select'; });
     },
 
     updateElement: (id, updates) => {
@@ -186,12 +220,36 @@ export const useStudioStore = create<StudioState>()(
       });
     },
 
+    updateSelectedElements: (updates) => {
+      const { selectedIds } = get();
+      set((s) => {
+        for (const id of selectedIds) {
+          const idx = s.elements.findIndex((e) => e.id === id);
+          if (idx !== -1) Object.assign(s.elements[idx], updates);
+        }
+      });
+    },
+
     deleteElement: (id) => {
       get().pushHistory();
       set((s) => {
         s.elements = s.elements.filter((e) => e.id !== id);
         delete s.lockedIds[id];
         if (s.selectedId === id) s.selectedId = null;
+        s.selectedIds = s.selectedIds.filter((i) => i !== id);
+      });
+    },
+
+    deleteSelectedElements: () => {
+      const { selectedIds, lockedIds } = get();
+      const toDelete = selectedIds.filter((id) => !lockedIds[id]);
+      if (toDelete.length === 0) return;
+      get().pushHistory();
+      set((s) => {
+        s.elements = s.elements.filter((e) => !toDelete.includes(e.id));
+        for (const id of toDelete) delete s.lockedIds[id];
+        s.selectedId = null;
+        s.selectedIds = [];
       });
     },
 
@@ -204,7 +262,26 @@ export const useStudioStore = create<StudioState>()(
         id: generateId(),
         position: { x: el.position.x + 20, y: el.position.y + 20 },
       };
-      set((s) => { s.elements.push(newEl); s.selectedId = newEl.id; });
+      set((s) => { s.elements.push(newEl); s.selectedId = newEl.id; s.selectedIds = [newEl.id]; });
+    },
+
+    duplicateSelectedElements: () => {
+      const { selectedIds, lockedIds, elements } = get();
+      const toDup = selectedIds.filter((id) => !lockedIds[id]);
+      if (toDup.length === 0) return;
+      get().pushHistory();
+      const newIds: string[] = [];
+      const newEls: PdfElement[] = toDup.map((id) => {
+        const el = elements.find((e) => e.id === id)!;
+        const newId = generateId();
+        newIds.push(newId);
+        return { ...JSON.parse(JSON.stringify(el)), id: newId, position: { x: el.position.x + 20, y: el.position.y + 20 } };
+      });
+      set((s) => {
+        for (const el of newEls) s.elements.push(el);
+        s.selectedIds = newIds;
+        s.selectedId = newIds[newIds.length - 1];
+      });
     },
 
     copyElement: (id) => {
@@ -223,6 +300,7 @@ export const useStudioStore = create<StudioState>()(
         s.elements = s.elements.filter((e) => e.id !== id);
         delete s.lockedIds[id];
         if (s.selectedId === id) s.selectedId = null;
+        s.selectedIds = s.selectedIds.filter((i) => i !== id);
       });
     },
 
@@ -238,7 +316,7 @@ export const useStudioStore = create<StudioState>()(
           ? { x: Math.max(0, x - clipboard.size.width / 2), y: Math.max(0, y - clipboard.size.height / 2) }
           : { x: clipboard.position.x + 20, y: clipboard.position.y + 20 },
       };
-      set((s) => { s.elements.push(newEl); s.selectedId = newEl.id; });
+      set((s) => { s.elements.push(newEl); s.selectedId = newEl.id; s.selectedIds = [newEl.id]; });
     },
 
     undo: () => {
@@ -249,6 +327,7 @@ export const useStudioStore = create<StudioState>()(
         s.historyIndex = historyIndex - 1;
         s.elements = JSON.parse(JSON.stringify(prev.elements));
         s.selectedId = null;
+        s.selectedIds = [];
       });
     },
 
@@ -260,6 +339,7 @@ export const useStudioStore = create<StudioState>()(
         s.historyIndex = historyIndex + 1;
         s.elements = JSON.parse(JSON.stringify(next.elements));
         s.selectedId = null;
+        s.selectedIds = [];
       });
     },
   }))

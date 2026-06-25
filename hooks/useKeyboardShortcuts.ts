@@ -5,8 +5,9 @@ import { useStudioStore } from '@/stores/studio.store';
 
 export function useKeyboardShortcuts() {
   const {
-    undo, redo, deleteElement, selectedId,
-    duplicateElement, copyElement, cutElement, pasteElement,
+    undo, redo, deleteElement, deleteSelectedElements, selectedId, selectedIds,
+    duplicateElement, duplicateSelectedElements, copyElement, cutElement, pasteElement,
+    clearSelection,
   } = useStudioStore();
 
   const mousePosRef = useRef<{ x: number; y: number } | null>(null);
@@ -26,10 +27,25 @@ export function useKeyboardShortcuts() {
 
       if (mod && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); return; }
       if (mod && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); redo(); return; }
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) { e.preventDefault(); deleteElement(selectedId); return; }
-      if (mod && e.key === 'd' && selectedId) { e.preventDefault(); duplicateElement(selectedId); return; }
+
+      // Escape to clear multi-selection
+      if (e.key === 'Escape' && selectedIds.length > 1) { e.preventDefault(); clearSelection(); return; }
+
+      // Delete / Backspace
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedIds.length > 1) { e.preventDefault(); deleteSelectedElements(); return; }
+        if (selectedId) { e.preventDefault(); deleteElement(selectedId); return; }
+      }
+
+      // Duplicate
+      if (mod && e.key === 'd') {
+        if (selectedIds.length > 1) { e.preventDefault(); duplicateSelectedElements(); return; }
+        if (selectedId) { e.preventDefault(); duplicateElement(selectedId); return; }
+      }
+
       if (mod && e.key === 'c' && selectedId) { e.preventDefault(); copyElement(selectedId); return; }
       if (mod && e.key === 'x' && selectedId) { e.preventDefault(); cutElement(selectedId); return; }
+
       if (mod && e.key === 'v') {
         e.preventDefault();
         const canvasEl = window.document.querySelector('[data-pdf-canvas]') as HTMLElement | null;
@@ -51,5 +67,6 @@ export function useKeyboardShortcuts() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [undo, redo, deleteElement, selectedId, duplicateElement, copyElement, cutElement, pasteElement]);
+  }, [undo, redo, deleteElement, deleteSelectedElements, selectedId, selectedIds,
+    duplicateElement, duplicateSelectedElements, copyElement, cutElement, pasteElement, clearSelection]);
 }

@@ -11,17 +11,22 @@ import { clampValue } from '@/lib/utils';
 export function PdfCanvas() {
   const {
     document: pdfDoc, currentPage, setCurrentPage, scale, setScale, elements,
-    activeToolMode, setSelectedId,
+    activeToolMode, setSelectedId, setSelectedIds, addToSelection, clearSelection,
     addTextField, addDateField, setActiveToolMode,
     pendingSignatureDataUrl, pendingSignatureSize,
     placeSignatureAtPosition, cancelSignaturePlacement,
     pasteElement, clipboard,
+    selectedIds,
   } = useStudioStore();
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const [ghostPos, setGhostPos] = useState<{ x: number; y: number } | null>(null);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; elX: number; elY: number } | null>(null);
+
+  // Drag-select state
+  const dragSelectRef = useRef<{ startX: number; startY: number } | null>(null);
+  const [dragRect, setDragRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
 
   const pinchRef = useRef<{ dist: number; scale: number } | null>(null);
   const isPinchingRef = useRef(false);
@@ -51,12 +56,108 @@ export function PdfCanvas() {
   }, []);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!isPlacingSignature || !containerRef.current) return;
-    const rect = containerRef.current.getBoundingClientRect();
-    setGhostPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    if (!containerRef.current) return;
+
+    if (isPlacingSignature) {
+      const rect = containerRef.current.getBoundingClientRect();
+      setGhostPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+      return;
+    }
+
+    // Update drag-select rectangle
+    if (dragSelectRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const curX = e.clientX - rect.left;
+      const curY = e.clientY - rect.top;
+      const startX = dragSelectRef.current.startX;
+      const startY = dragSelectRef.current.startY;
+      setDragRect({
+        x: Math.min(startX, curX),
+        y: Math.min(startY, curY),
+        w: Math.abs(curX - startX),
+        h: Math.abs(curY - startY),
+      });
+    }
   }, [isPlacingSignature]);
 
   const handleMouseLeave = useCallback(() => { setGhostPos(null); }, []);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (activeToolMode !== 'select') return;
+    if (isPlacingSignature) return;
+    // Only start drag-select when clicking directly on the canvas background (not an element)
+    const target = e.target as HTMLElement;
+    if (target.closest('[data-element-overlay]')) return;
+    if (!containerRef.current) return;
+
+    const rect = containerRef.current.getBoundingClientRect();
+    dragSelectRef.current = { startX: e.clientX - rect.left, startY: e.clientY - rect.top };
+    setDragRect(null);
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (!dragSelectRef.current || !containerRef.current) return;
+      const r = containerRef.current.getBoundingClientRect();
+      const curX = ev.clientX - r.left;
+      const curY = ev.clientY - r.top;
+      const startX = dragSelectRef.current.startX;
+      const startY = dragSelectRef.current.startY;
+      setDragRect({
+        x: Math.min(startX, curX),
+        y: Math.min(startY, curY),
+        w: Math.abs(curX - startX),
+        h: Math.abs(curY - startY),
+      });
+    };
+
+    const onMouseUp = (ev: MouseEvent) => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+
+      if (!dragSelectRef.current || !containerRef.current) {
+        dragSelectRef.current = null;
+        setDragRect(null);
+        return;
+      }
+
+      const r = containerRef.current.getBoundingClientRect();
+      const curX = ev.clientX - r.left;
+      const curY = ev.clientY - r.top;
+      const sx = dragSelectRef.current.startX;
+      const sy = dragSelectRef.current.startY;
+
+      const selRect = {
+        x: Math.min(sx, curX) / scale,
+        y: Math.min(sy, curY) / scale,
+        w: Math.abs(curX - sx) / scale,
+        h: Math.abs(curY - sy) / scale,
+      };
+
+      dragSelectRef.current = null;
+      setDragRect(null);
+
+      // Only do drag-select if meaningful movement
+      if (selRect.w < 4 && selRect.h < 4) return;
+
+      const pageElements = useStudioStore.getState().elements.filter((el) => el.pageIndex === useStudioStore.getState().currentPage);
+      const hit = pageElements.filter((el) => {
+        return (
+          el.position.x < selRect.x + selRect.w &&
+          el.position.x + el.size.width > selRect.x &&
+          el.position.y < selRect.y + selRect.h &&
+          el.position.y + el.size.height > selRect.y
+        );
+      });
+
+      if (hit.length > 0) {
+        setSelectedIds(hit.map((el) => el.id));
+      } else {
+        clearSelection();
+      }
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  }, [activeToolMode, isPlacingSignature, scale, setSelectedIds, clearSelection]);
 
   const handleCanvasClick = useCallback((e: React.MouseEvent) => {
     if (!containerRef.current) return;
@@ -72,14 +173,14 @@ export function PdfCanvas() {
     }
     if (activeToolMode === 'select') {
       if (e.target === containerRef.current || (e.target as HTMLElement).closest('[data-element-overlay]') === null) {
-        setSelectedId(null);
+        if (!e.shiftKey) clearSelection();
       }
       return;
     }
     if (activeToolMode === 'text') { addTextField(currentPage, clickX, clickY); setActiveToolMode('select'); }
     else if (activeToolMode === 'date') { addDateField(currentPage, clickX, clickY); setActiveToolMode('select'); }
   }, [activeToolMode, isPlacingSignature, currentPage, scale, addTextField, addDateField,
-    setSelectedId, setActiveToolMode, placeSignatureAtPosition]);
+    clearSelection, setActiveToolMode, placeSignatureAtPosition]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest('[data-element-overlay]')) return;
@@ -229,6 +330,18 @@ export function PdfCanvas() {
         </button>
       </div>
 
+      {/* Multi-select info bar */}
+      {selectedIds.length > 1 && (
+        <div
+          className="w-full px-4 py-1.5 text-xs font-medium flex items-center gap-2"
+          style={{ background: '#EEF2FF', borderBottom: '1px solid #C7D2FE', color: 'var(--color-primary)' }}
+        >
+          <span>{selectedIds.length} elements selected</span>
+          <span className="opacity-50">·</span>
+          <span className="opacity-70">Shift+click to add/remove · ESC to deselect</span>
+        </div>
+      )}
+
       {/* Canvas wrapper */}
       <div className="flex-1 overflow-auto flex items-start justify-center w-full p-3 sm:p-8">
         {isPlacingSignature && (
@@ -244,6 +357,7 @@ export function PdfCanvas() {
           data-pdf-canvas
           ref={containerRef}
           onClick={handleCanvasClick}
+          onMouseDown={handleMouseDown}
           onContextMenu={handleContextMenu}
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
@@ -278,6 +392,23 @@ export function PdfCanvas() {
               </div>
             ))}
           </div>
+
+          {/* Drag-select rectangle */}
+          {dragRect && dragRect.w > 2 && dragRect.h > 2 && (
+            <div
+              className="absolute pointer-events-none"
+              style={{
+                left: dragRect.x,
+                top: dragRect.y,
+                width: dragRect.w,
+                height: dragRect.h,
+                border: '1.5px dashed var(--color-primary)',
+                background: 'rgba(99, 102, 241, 0.08)',
+                borderRadius: 2,
+                zIndex: 100,
+              }}
+            />
+          )}
 
           {isPlacingSignature && pendingSignatureDataUrl && ghostPos && (
             <div className="absolute pointer-events-none" style={{

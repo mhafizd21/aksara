@@ -2,15 +2,16 @@
 
 import { useState } from 'react';
 import { useStudioStore } from '@/stores/studio.store';
-import { Settings, Type, Calendar, PenLine, Trash2, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { Settings, Type, Calendar, PenLine, Trash2, ChevronLeft, ChevronRight, X, Layers } from 'lucide-react';
 import { FONT_FAMILIES, DATE_FORMATS } from '@/lib/constants';
 import { formatDate } from '@/lib/utils';
 import type { TextField, DateField } from '@/types';
 
 export function PropertiesPanel() {
-  const { selectedId, elements, updateElement, deleteElement } = useStudioStore();
+  const { selectedId, selectedIds, elements, updateElement, updateSelectedElements, deleteElement, deleteSelectedElements } = useStudioStore();
   const selected = elements.find((e) => e.id === selectedId);
   const [open, setOpen] = useState(true);
+  const isMultiSelect = selectedIds.length > 1;
 
   return (
     <div className="hidden sm:flex shrink-0 relative">
@@ -33,13 +34,19 @@ export function PropertiesPanel() {
         }
       </button>
 
-      {/* Panel body — open */}
       {open && (
         <aside
           className="w-64 flex flex-col overflow-hidden"
           style={{ borderLeft: '1px solid var(--color-border)', background: 'var(--color-background)' }}
         >
-          {!selectedId || !selected ? (
+          {isMultiSelect ? (
+            <MultiSelectPanel
+              selectedIds={selectedIds}
+              elements={elements}
+              updateSelectedElements={updateSelectedElements}
+              deleteSelectedElements={deleteSelectedElements}
+            />
+          ) : !selectedId || !selected ? (
             <>
               <div className="px-4 py-3 shrink-0" style={{ borderBottom: '1px solid var(--color-border)' }}>
                 <p className="label">Properties</p>
@@ -64,7 +71,6 @@ export function PropertiesPanel() {
         </aside>
       )}
 
-      {/* Collapsed strip */}
       {!open && (
         <div
           className="w-8 flex flex-col items-center justify-center"
@@ -82,6 +88,245 @@ export function PropertiesPanel() {
           >
             Properties
           </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MultiSelectPanel({
+  selectedIds, elements, updateSelectedElements, deleteSelectedElements,
+}: {
+  selectedIds: string[];
+  elements: ReturnType<typeof useStudioStore.getState>['elements'];
+  updateSelectedElements: ReturnType<typeof useStudioStore.getState>['updateSelectedElements'];
+  deleteSelectedElements: ReturnType<typeof useStudioStore.getState>['deleteSelectedElements'];
+}) {
+  const selectedElements = elements.filter((e) => selectedIds.includes(e.id));
+  const textLikeElements = selectedElements.filter((e) => e.type === 'text' || e.type === 'date') as (TextField | DateField)[];
+  const hasTextLike = textLikeElements.length > 0;
+
+  // Derive shared values (show placeholder if mixed)
+  const firstText = textLikeElements[0];
+  const sharedFontFamily = textLikeElements.every((e) => e.fontFamily === firstText?.fontFamily) ? firstText?.fontFamily : '';
+  const sharedFontSize = textLikeElements.every((e) => e.fontSize === firstText?.fontSize) ? firstText?.fontSize : undefined;
+  const sharedColor = textLikeElements.every((e) => e.color === firstText?.color) ? firstText?.color : '#000000';
+
+  return (
+    <>
+      <div className="px-4 py-3 flex items-center justify-between shrink-0"
+        style={{ borderBottom: '1px solid var(--color-border)' }}>
+        <div className="flex items-center gap-2">
+          <Layers className="w-4 h-4" style={{ color: 'var(--color-primary)' }} />
+          <p className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>
+            {selectedIds.length} Elements
+          </p>
+        </div>
+        <button
+          onClick={deleteSelectedElements}
+          className="p-1.5 rounded-lg transition-colors"
+          style={{ color: 'var(--color-text-secondary)' }}
+          title="Delete all selected"
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLElement).style.background = '#FEF2F2';
+            (e.currentTarget as HTMLElement).style.color = 'var(--color-danger)';
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLElement).style.background = 'transparent';
+            (e.currentTarget as HTMLElement).style.color = 'var(--color-text-secondary)';
+          }}
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4 space-y-5">
+        {/* Element summary */}
+        <Section title="Selection">
+          <div className="space-y-1">
+            {selectedElements.map((el) => {
+              const Icon = el.type === 'text' ? Type : el.type === 'date' ? Calendar : PenLine;
+              const label = el.type === 'text' ? 'Text' : el.type === 'date' ? 'Date' : 'Signature';
+              const preview = (el.type === 'text' || el.type === 'date') ? el.content : 'Signature';
+              return (
+                <div key={el.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg"
+                  style={{ background: 'var(--color-surface)' }}>
+                  <Icon className="w-3 h-3 shrink-0" style={{ color: 'var(--color-primary)' }} />
+                  <span className="text-xs truncate" style={{ color: 'var(--color-text-secondary)' }}>
+                    {label}: {preview}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </Section>
+
+        {/* Alignment */}
+        <Section title="Align">
+          <AlignmentControls selectedIds={selectedIds} elements={elements} />
+        </Section>
+
+        {/* Bulk typography for text/date elements */}
+        {hasTextLike && (
+          <Section title={`Typography (${textLikeElements.length} of ${selectedIds.length})`}>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <label className="text-xs w-10 shrink-0" style={{ color: 'var(--color-text-secondary)' }}>Font</label>
+                <select
+                  value={sharedFontFamily}
+                  onChange={(e) => updateSelectedElements({ fontFamily: e.target.value } as Partial<TextField>)}
+                  className="input flex-1" style={{ fontSize: 12 }}
+                >
+                  {!sharedFontFamily && <option value="">— mixed —</option>}
+                  {FONT_FAMILIES.map((f) => <option key={f} value={f}>{f}</option>)}
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-xs w-10 shrink-0" style={{ color: 'var(--color-text-secondary)' }}>Size</label>
+                <input
+                  type="number"
+                  value={sharedFontSize ?? ''}
+                  placeholder="mixed"
+                  min={6} max={72}
+                  onChange={(e) => updateSelectedElements({ fontSize: Number(e.target.value) } as Partial<TextField>)}
+                  className="input flex-1" style={{ fontSize: 12 }}
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-xs w-10 shrink-0" style={{ color: 'var(--color-text-secondary)' }}>Color</label>
+                <input
+                  type="color"
+                  value={sharedColor}
+                  onChange={(e) => updateSelectedElements({ color: e.target.value } as Partial<TextField>)}
+                  className="w-8 h-7 rounded cursor-pointer"
+                  style={{ border: '1px solid var(--color-border)' }}
+                />
+                <span className="text-xs font-mono" style={{ color: 'var(--color-text-secondary)' }}>
+                  {sharedColor || 'mixed'}
+                </span>
+              </div>
+            </div>
+          </Section>
+        )}
+      </div>
+    </>
+  );
+}
+
+function AlignmentControls({
+  selectedIds, elements,
+}: {
+  selectedIds: string[];
+  elements: ReturnType<typeof useStudioStore.getState>['elements'];
+}) {
+  const { updateElement } = useStudioStore();
+
+  const selectedElements = elements.filter((e) => selectedIds.includes(e.id));
+  if (selectedElements.length < 2) return null;
+
+  const alignLeft = () => {
+    const minX = Math.min(...selectedElements.map((e) => e.position.x));
+    for (const el of selectedElements) updateElement(el.id, { position: { ...el.position, x: minX } });
+  };
+  const alignRight = () => {
+    const maxRight = Math.max(...selectedElements.map((e) => e.position.x + e.size.width));
+    for (const el of selectedElements) updateElement(el.id, { position: { ...el.position, x: maxRight - el.size.width } });
+  };
+  const alignTop = () => {
+    const minY = Math.min(...selectedElements.map((e) => e.position.y));
+    for (const el of selectedElements) updateElement(el.id, { position: { ...el.position, y: minY } });
+  };
+  const alignBottom = () => {
+    const maxBottom = Math.max(...selectedElements.map((e) => e.position.y + e.size.height));
+    for (const el of selectedElements) updateElement(el.id, { position: { ...el.position, y: maxBottom - el.size.height } });
+  };
+  const alignCenterH = () => {
+    const minX = Math.min(...selectedElements.map((e) => e.position.x));
+    const maxRight = Math.max(...selectedElements.map((e) => e.position.x + e.size.width));
+    const centerX = (minX + maxRight) / 2;
+    for (const el of selectedElements) updateElement(el.id, { position: { ...el.position, x: centerX - el.size.width / 2 } });
+  };
+  const alignCenterV = () => {
+    const minY = Math.min(...selectedElements.map((e) => e.position.y));
+    const maxBottom = Math.max(...selectedElements.map((e) => e.position.y + e.size.height));
+    const centerY = (minY + maxBottom) / 2;
+    for (const el of selectedElements) updateElement(el.id, { position: { ...el.position, y: centerY - el.size.height / 2 } });
+  };
+  const distributeH = () => {
+    if (selectedElements.length < 3) return;
+    const sorted = [...selectedElements].sort((a, b) => a.position.x - b.position.x);
+    const totalW = sorted.reduce((sum, e) => sum + e.size.width, 0);
+    const gap = (sorted[sorted.length - 1].position.x + sorted[sorted.length - 1].size.width - sorted[0].position.x - totalW) / (sorted.length - 1);
+    let curX = sorted[0].position.x;
+    for (const el of sorted) {
+      updateElement(el.id, { position: { ...el.position, x: curX } });
+      curX += el.size.width + gap;
+    }
+  };
+  const distributeV = () => {
+    if (selectedElements.length < 3) return;
+    const sorted = [...selectedElements].sort((a, b) => a.position.y - b.position.y);
+    const totalH = sorted.reduce((sum, e) => sum + e.size.height, 0);
+    const gap = (sorted[sorted.length - 1].position.y + sorted[sorted.length - 1].size.height - sorted[0].position.y - totalH) / (sorted.length - 1);
+    let curY = sorted[0].position.y;
+    for (const el of sorted) {
+      updateElement(el.id, { position: { ...el.position, y: curY } });
+      curY += el.size.height + gap;
+    }
+  };
+
+  const btnStyle: React.CSSProperties = {
+    background: 'var(--color-surface)',
+    border: '1px solid var(--color-border)',
+    borderRadius: 6,
+    padding: '4px 0',
+    fontSize: 10,
+    color: 'var(--color-text-secondary)',
+    cursor: 'pointer',
+    flex: 1,
+    textAlign: 'center',
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex gap-1">
+        {[
+          { label: '⬛◻◻ L', fn: alignLeft, title: 'Align left edges' },
+          { label: '◻⬛◻ C', fn: alignCenterH, title: 'Align centers horizontally' },
+          { label: '◻◻⬛ R', fn: alignRight, title: 'Align right edges' },
+        ].map(({ label, fn, title }) => (
+          <button key={label} onClick={fn} title={title} style={btnStyle}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = '#EEF2FF'; (e.currentTarget as HTMLElement).style.color = 'var(--color-primary)'; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--color-surface)'; (e.currentTarget as HTMLElement).style.color = 'var(--color-text-secondary)'; }}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="flex gap-1">
+        {[
+          { label: '⬛ Top', fn: alignTop, title: 'Align top edges' },
+          { label: '⬛ Mid', fn: alignCenterV, title: 'Align centers vertically' },
+          { label: '⬛ Bot', fn: alignBottom, title: 'Align bottom edges' },
+        ].map(({ label, fn, title }) => (
+          <button key={label} onClick={fn} title={title} style={btnStyle}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = '#EEF2FF'; (e.currentTarget as HTMLElement).style.color = 'var(--color-primary)'; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--color-surface)'; (e.currentTarget as HTMLElement).style.color = 'var(--color-text-secondary)'; }}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {selectedElements.length >= 3 && (
+        <div className="flex gap-1">
+          {[
+            { label: '↔ Distribute H', fn: distributeH, title: 'Distribute horizontally' },
+            { label: '↕ Distribute V', fn: distributeV, title: 'Distribute vertically' },
+          ].map(({ label, fn, title }) => (
+            <button key={label} onClick={fn} title={title} style={btnStyle}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = '#EEF2FF'; (e.currentTarget as HTMLElement).style.color = 'var(--color-primary)'; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--color-surface)'; (e.currentTarget as HTMLElement).style.color = 'var(--color-text-secondary)'; }}>
+              {label}
+            </button>
+          ))}
         </div>
       )}
     </div>
@@ -184,14 +429,18 @@ function PanelContent({
 }
 
 export function MobilePropertiesSheet() {
-  const { selectedId, elements, updateElement, deleteElement } = useStudioStore();
+  const { selectedId, selectedIds, elements, updateElement, updateSelectedElements, deleteElement, deleteSelectedElements } = useStudioStore();
   const selected = elements.find((e) => e.id === selectedId);
   const [open, setOpen] = useState(false);
+  const isMultiSelect = selectedIds.length > 1;
 
-  if (!selectedId || !selected) return null;
+  if (!selectedId && !isMultiSelect) return null;
+  if (!isMultiSelect && !selected) return null;
 
-  const ElementIcon = selected.type === 'text' ? Type : selected.type === 'date' ? Calendar : PenLine;
-  const elementLabel = selected.type === 'text' ? 'Text Field' : selected.type === 'date' ? 'Date Field' : 'Signature';
+  const ElementIcon = selected?.type === 'text' ? Type : selected?.type === 'date' ? Calendar : PenLine;
+  const elementLabel = isMultiSelect
+    ? `${selectedIds.length} Elements`
+    : selected?.type === 'text' ? 'Text Field' : selected?.type === 'date' ? 'Date Field' : 'Signature';
 
   return (
     <>
@@ -200,8 +449,8 @@ export function MobilePropertiesSheet() {
         className="fixed bottom-16 right-4 z-40 sm:hidden flex items-center gap-2 px-3 py-2 rounded-full text-sm font-medium"
         style={{ background: 'var(--color-primary)', color: '#fff', boxShadow: '0 4px 12px rgba(67,56,202,0.4)' }}
       >
-        <Settings className="w-4 h-4" />
-        Properties
+        {isMultiSelect ? <Layers className="w-4 h-4" /> : <Settings className="w-4 h-4" />}
+        {elementLabel}
       </button>
 
       {open && (
@@ -218,12 +467,12 @@ export function MobilePropertiesSheet() {
             <div className="flex items-center justify-between px-4 py-2"
               style={{ borderBottom: '1px solid var(--color-border)' }}>
               <div className="flex items-center gap-2">
-                <ElementIcon className="w-4 h-4" style={{ color: 'var(--color-primary)' }} />
+                {isMultiSelect ? <Layers className="w-4 h-4" style={{ color: 'var(--color-primary)' }} /> : <ElementIcon className="w-4 h-4" style={{ color: 'var(--color-primary)' }} />}
                 <p className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>{elementLabel}</p>
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => { deleteElement(selected.id); setOpen(false); }}
+                  onClick={() => { isMultiSelect ? deleteSelectedElements() : deleteElement(selected!.id); setOpen(false); }}
                   className="p-1.5 rounded-lg"
                   style={{ color: 'var(--color-danger)', background: '#FEF2F2' }}
                 >
@@ -240,55 +489,66 @@ export function MobilePropertiesSheet() {
             </div>
 
             <div className="overflow-y-auto p-4 space-y-5" style={{ maxHeight: 'calc(70vh - 80px)' }}>
-              <Section title="Layout">
-                <div className="grid grid-cols-2 gap-2">
-                  {[
-                    { label: 'X', value: Math.round(selected.position.x), onChange: (v: number) => updateElement(selected.id, { position: { ...selected.position, x: v } }) },
-                    { label: 'Y', value: Math.round(selected.position.y), onChange: (v: number) => updateElement(selected.id, { position: { ...selected.position, y: v } }) },
-                    { label: 'W', value: Math.round(selected.size.width), min: 40, onChange: (v: number) => updateElement(selected.id, { size: { ...selected.size, width: v } }) },
-                    { label: 'H', value: Math.round(selected.size.height), min: 20, onChange: (v: number) => updateElement(selected.id, { size: { ...selected.size, height: v } }) },
-                  ].map(({ label, value, min, onChange }) => (
-                    <NumberInput key={label} label={label} value={value} min={min} onChange={onChange} />
-                  ))}
-                </div>
-              </Section>
-
-              {selected.type === 'text' && (
+              {isMultiSelect ? (
+                <MultiSelectPanel
+                  selectedIds={selectedIds}
+                  elements={elements}
+                  updateSelectedElements={updateSelectedElements}
+                  deleteSelectedElements={() => { deleteSelectedElements(); setOpen(false); }}
+                />
+              ) : selected ? (
                 <>
-                  <Section title="Content">
-                    <textarea value={(selected as TextField).content}
-                      onChange={(e) => updateElement(selected.id, { content: e.target.value })}
-                      rows={3} className="input resize-none" style={{ fontSize: 12 }} />
+                  <Section title="Layout">
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { label: 'X', value: Math.round(selected.position.x), onChange: (v: number) => updateElement(selected.id, { position: { ...selected.position, x: v } }) },
+                        { label: 'Y', value: Math.round(selected.position.y), onChange: (v: number) => updateElement(selected.id, { position: { ...selected.position, y: v } }) },
+                        { label: 'W', value: Math.round(selected.size.width), min: 40, onChange: (v: number) => updateElement(selected.id, { size: { ...selected.size, width: v } }) },
+                        { label: 'H', value: Math.round(selected.size.height), min: 20, onChange: (v: number) => updateElement(selected.id, { size: { ...selected.size, height: v } }) },
+                      ].map(({ label, value, min, onChange }) => (
+                        <NumberInput key={label} label={label} value={value} min={min} onChange={onChange} />
+                      ))}
+                    </div>
                   </Section>
-                  <TextStyleSection element={selected as TextField} onChange={(u) => updateElement(selected.id, u)} />
-                </>
-              )}
 
-              {selected.type === 'date' && (
-                <>
-                  <Section title="Format">
-                    <select value={(selected as DateField).format}
-                      onChange={(e) => updateElement(selected.id, {
-                        format: e.target.value,
-                        content: formatDate(new Date(), e.target.value),
-                      })}
-                      className="input" style={{ fontSize: 12 }}>
-                      {DATE_FORMATS.map((f) => <option key={f} value={f}>{f}</option>)}
-                    </select>
-                  </Section>
-                  <TextStyleSection element={selected as DateField} onChange={(u) => updateElement(selected.id, u)} />
-                </>
-              )}
+                  {selected.type === 'text' && (
+                    <>
+                      <Section title="Content">
+                        <textarea value={(selected as TextField).content}
+                          onChange={(e) => updateElement(selected.id, { content: e.target.value })}
+                          rows={3} className="input resize-none" style={{ fontSize: 12 }} />
+                      </Section>
+                      <TextStyleSection element={selected as TextField} onChange={(u) => updateElement(selected.id, u)} />
+                    </>
+                  )}
 
-              {selected.type === 'signature' && (
-                <Section title="Preview">
-                  <div className="rounded-lg p-3"
-                    style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={selected.dataUrl} alt="Signature preview" className="w-full h-14 object-contain" />
-                  </div>
-                </Section>
-              )}
+                  {selected.type === 'date' && (
+                    <>
+                      <Section title="Format">
+                        <select value={(selected as DateField).format}
+                          onChange={(e) => updateElement(selected.id, {
+                            format: e.target.value,
+                            content: formatDate(new Date(), e.target.value),
+                          })}
+                          className="input" style={{ fontSize: 12 }}>
+                          {DATE_FORMATS.map((f) => <option key={f} value={f}>{f}</option>)}
+                        </select>
+                      </Section>
+                      <TextStyleSection element={selected as DateField} onChange={(u) => updateElement(selected.id, u)} />
+                    </>
+                  )}
+
+                  {selected.type === 'signature' && (
+                    <Section title="Preview">
+                      <div className="rounded-lg p-3"
+                        style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={selected.dataUrl} alt="Signature preview" className="w-full h-14 object-contain" />
+                      </div>
+                    </Section>
+                  )}
+                </>
+              ) : null}
             </div>
           </div>
         </>

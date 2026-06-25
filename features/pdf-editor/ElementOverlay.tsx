@@ -18,11 +18,17 @@ function getClient(e: MouseEvent | TouchEvent): { clientX: number; clientY: numb
 }
 
 export function ElementOverlay({ element, scale }: ElementOverlayProps) {
-  const { selectedId, setSelectedId, updateElement, deleteElement, duplicateElement,
-    copyElement, cutElement, pasteElement, clipboard, pushHistory, toggleLock } = useStudioStore();
+  const {
+    selectedId, selectedIds, setSelectedId, setSelectedIds, addToSelection, removeFromSelection,
+    updateElement, deleteElement, duplicateElement,
+    copyElement, cutElement, pasteElement, clipboard, pushHistory, toggleLock,
+    deleteSelectedElements, duplicateSelectedElements,
+  } = useStudioStore();
 
   const locked = useStudioStore((s) => !!s.lockedIds[element.id]);
-  const isSelected = selectedId === element.id;
+  const isSelected = selectedIds.includes(element.id);
+  const isPrimary = selectedId === element.id;
+  const isMultiSelect = selectedIds.length > 1;
 
   const dragStartRef = useRef<{ mouseX: number; mouseY: number; elX: number; elY: number } | null>(null);
   const resizeRef = useRef<{ handle: ResizeHandle; startMouseX: number; startMouseY: number; startX: number; startY: number; startW: number; startH: number } | null>(null);
@@ -50,14 +56,42 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
   }, []);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if (isEditing) return; // don't drag while editing
+    if (isEditing) return;
     e.stopPropagation(); e.preventDefault();
 
-    const wasAlreadySelected = selectedId === element.id;
-    setSelectedId(element.id);
+    const wasAlreadySelected = selectedIds.includes(element.id);
+
+    // Shift+click: toggle in selection
+    if (e.shiftKey) {
+      if (wasAlreadySelected) {
+        removeFromSelection(element.id);
+      } else {
+        addToSelection(element.id);
+      }
+      return;
+    }
+
+    // Normal click: if clicking an already-selected element in multi-select, keep selection
+    if (wasAlreadySelected && isMultiSelect) {
+      // just set this as primary without clearing others
+      useStudioStore.setState({ selectedId: element.id });
+    } else if (!wasAlreadySelected) {
+      setSelectedId(element.id);
+    }
+
     if (locked) return;
     didMoveRef.current = false;
     dragStartRef.current = { mouseX: e.clientX, mouseY: e.clientY, elX: element.position.x, elY: element.position.y };
+
+    // For multi-select drag: we track all selected elements' start positions
+    const state = useStudioStore.getState();
+    const multiDragStarts = state.selectedIds
+      .filter((id) => !state.lockedIds[id])
+      .map((id) => {
+        const el = state.elements.find((e) => e.id === id);
+        return el ? { id, startX: el.position.x, startY: el.position.y } : null;
+      })
+      .filter(Boolean) as { id: string; startX: number; startY: number }[];
 
     const onMove = (ev: MouseEvent) => {
       if (!dragStartRef.current) return;
@@ -65,22 +99,27 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
       if (!didMoveRef.current) { pushHistory(); didMoveRef.current = true; setIsDragging(true); }
       const dx = (ev.clientX - dragStartRef.current.mouseX) / scale;
       const dy = (ev.clientY - dragStartRef.current.mouseY) / scale;
-      updateElement(element.id, { position: { x: Math.max(0, dragStartRef.current.elX + dx), y: Math.max(0, dragStartRef.current.elY + dy) } });
+
+      if (multiDragStarts.length > 1) {
+        for (const { id, startX, startY } of multiDragStarts) {
+          updateElement(id, { position: { x: Math.max(0, startX + dx), y: Math.max(0, startY + dy) } });
+        }
+      } else {
+        updateElement(element.id, { position: { x: Math.max(0, dragStartRef.current.elX + dx), y: Math.max(0, dragStartRef.current.elY + dy) } });
+      }
     };
     const onUp = () => {
       dragStartRef.current = null;
       setIsDragging(false);
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
-      // Click (no drag) on an already-selected text/date element -> edit directly,
-      // without requiring the Properties Panel.
-      if (!didMoveRef.current && wasAlreadySelected && (element.type === 'text' || element.type === 'date')) {
+      if (!didMoveRef.current && wasAlreadySelected && !isMultiSelect && (element.type === 'text' || element.type === 'date')) {
         startEditing();
       }
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
-  }, [element, scale, locked, isEditing, selectedId, setSelectedId, updateElement, pushHistory]);
+  }, [element, scale, locked, isEditing, selectedIds, isMultiSelect, setSelectedId, addToSelection, removeFromSelection, updateElement, pushHistory, startEditing]);
 
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     e.stopPropagation();
@@ -166,7 +205,6 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
     if (handle) startResize(e.touches[0].clientX, e.touches[0].clientY, handle);
   }, [startResize]);
 
-  // Double-click to edit inline
   const handleDoubleClick = useCallback((e: React.MouseEvent) => {
     if (locked || (element.type !== 'text' && element.type !== 'date')) return;
     e.stopPropagation();
@@ -179,18 +217,11 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
   const handleDoubleTap = useCallback(
     (e: React.TouchEvent) => {
       const now = Date.now();
-
       const isDoubleTap = now - lastTapRef.current < 300;
-
-      if (
-        isDoubleTap &&
-        !locked &&
-        (element.type === "text" || element.type === "date")
-      ) {
+      if (isDoubleTap && !locked && (element.type === 'text' || element.type === 'date')) {
         e.stopPropagation();
         startEditing();
       }
-
       lastTapRef.current = now;
     },
     [locked, element.type, startEditing]
@@ -228,6 +259,10 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
     { label: 'Paste', shortcut: '⌘V', icon: Clipboard, disabled: !clipboard, onClick: () => { pasteElement(element.position.x + element.size.width + 10, element.position.y); setCtxMenu(null); } },
     { label: 'Duplicate', shortcut: '⌘D', icon: Clipboard, onClick: () => { duplicateElement(element.id); setCtxMenu(null); }, disabled: locked },
   ];
+
+  // Selection outline color
+  const outlineColor = locked ? '#F59E0B' : isMultiSelect && isSelected ? '#6366F1' : 'var(--color-primary)';
+  const outlineStyle = isMultiSelect && isSelected && !isPrimary ? '2px dashed' : '2px solid';
 
   return (
     <>
@@ -284,7 +319,10 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
         )}
 
         <div className="absolute inset-0 rounded pointer-events-none transition-all"
-          style={{ outline: isSelected ? `2px solid ${locked ? '#F59E0B' : 'var(--color-primary)'}` : '1.5px solid transparent', outlineOffset: 0 }} />
+          style={{
+            outline: isSelected ? `${outlineStyle} ${outlineColor}` : '1.5px solid transparent',
+            outlineOffset: 0,
+          }} />
         {!isSelected && (
           <div className="absolute inset-0 rounded pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"
             style={{ outline: `1.5px solid ${locked ? '#F59E0B' : 'var(--color-primary)'}`, outlineOffset: 0 }} />
@@ -297,7 +335,8 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
           </div>
         )}
 
-        {isSelected && (
+        {/* Toolbar: show for single-select primary or multi-select primary */}
+        {isPrimary && (
           <div
             className="absolute -top-10 left-0 flex items-center gap-1 px-1.5 py-1 z-50"
             style={{ background: 'var(--color-background)', border: '1px solid var(--color-border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', whiteSpace: 'nowrap' }}
@@ -306,22 +345,37 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
           >
             <GripHorizontal className="w-3.5 h-3.5" style={{ color: 'var(--color-text-disabled)' }} />
             <div className="w-px h-3.5" style={{ background: 'var(--color-border)' }} />
-            <FBtn icon={locked ? Unlock : Lock} title={locked ? 'Unlock' : 'Lock'}
-              onClick={() => toggleLock(element.id)}
-              iconStyle={{ color: locked ? '#F59E0B' : 'var(--color-text-secondary)' }} />
-            <FBtn icon={Copy} title="Copy (⌘C)" onClick={() => copyElement(element.id)} />
-            {!locked && (
+            {isMultiSelect ? (
               <>
-                <FBtn icon={Scissors} title="Cut (⌘X)" onClick={() => cutElement(element.id)} />
-                <FBtn icon={Clipboard} title="Duplicate (⌘D)" onClick={() => duplicateElement(element.id)} />
+                <span className="text-xs px-1" style={{ color: 'var(--color-text-secondary)' }}>
+                  {selectedIds.length} selected
+                </span>
+                <div className="w-px h-3.5" style={{ background: 'var(--color-border)' }} />
+                <FBtn icon={Clipboard} title="Duplicate all (⌘D)" onClick={() => duplicateSelectedElements()} />
+                <div className="w-px h-3.5" style={{ background: 'var(--color-border)' }} />
+                <FBtn icon={Trash2} title="Delete all" onClick={() => deleteSelectedElements()} danger />
+              </>
+            ) : (
+              <>
+                <FBtn icon={locked ? Unlock : Lock} title={locked ? 'Unlock' : 'Lock'}
+                  onClick={() => toggleLock(element.id)}
+                  iconStyle={{ color: locked ? '#F59E0B' : 'var(--color-text-secondary)' }} />
+                <FBtn icon={Copy} title="Copy (⌘C)" onClick={() => copyElement(element.id)} />
+                {!locked && (
+                  <>
+                    <FBtn icon={Scissors} title="Cut (⌘X)" onClick={() => cutElement(element.id)} />
+                    <FBtn icon={Clipboard} title="Duplicate (⌘D)" onClick={() => duplicateElement(element.id)} />
+                  </>
+                )}
+                <div className="w-px h-3.5" style={{ background: 'var(--color-border)' }} />
+                <FBtn icon={Trash2} title="Delete" onClick={() => deleteElement(element.id)} danger />
               </>
             )}
-            <div className="w-px h-3.5" style={{ background: 'var(--color-border)' }} />
-            <FBtn icon={Trash2} title="Delete" onClick={() => deleteElement(element.id)} danger />
           </div>
         )}
 
-        {isSelected && !locked && handles.map((handle) => (
+        {/* Resize handles: only on primary selected, non-locked, single-select */}
+        {isPrimary && !locked && !isMultiSelect && handles.map((handle) => (
           <div key={handle} data-handle={handle}
             onMouseDown={handleResizeDispatch}
             onTouchStart={handleResizeTouchDispatch}
