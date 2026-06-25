@@ -21,7 +21,6 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
   const { selectedId, setSelectedId, updateElement, deleteElement, duplicateElement,
     copyElement, cutElement, pasteElement, clipboard, pushHistory, toggleLock } = useStudioStore();
 
-  // Reactive — re-renders when lockedIds changes
   const locked = useStudioStore((s) => !!s.lockedIds[element.id]);
   const isSelected = selectedId === element.id;
 
@@ -31,6 +30,8 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
   const didMoveRef = useRef(false);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const editInputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     if (!ctxMenu) return;
@@ -41,6 +42,7 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
   }, [ctxMenu]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (isEditing) return; // don't drag while editing
     e.stopPropagation(); e.preventDefault();
     setSelectedId(element.id);
     if (locked) return;
@@ -58,7 +60,7 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
     const onUp = () => { dragStartRef.current = null; setIsDragging(false); window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
-  }, [element, scale, locked, setSelectedId, updateElement, pushHistory]);
+  }, [element, scale, locked, isEditing, setSelectedId, updateElement, pushHistory]);
 
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     e.stopPropagation();
@@ -144,6 +146,47 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
     if (handle) startResize(e.touches[0].clientX, e.touches[0].clientY, handle);
   }, [startResize]);
 
+  // Double-click to edit inline
+  const handleDoubleClick = useCallback((e: React.MouseEvent) => {
+    if (locked || (element.type !== 'text' && element.type !== 'date')) return;
+    e.stopPropagation();
+    setIsEditing(true);
+    setTimeout(() => { editInputRef.current?.focus(); editInputRef.current?.select(); }, 0);
+  }, [locked, element.type]);
+
+  const startEditing = useCallback(() => {
+    setIsEditing(true);
+
+    setTimeout(() => {
+      editInputRef.current?.focus();
+      editInputRef.current?.select();
+    }, 0);
+  }, []);
+
+  const lastTapRef = useRef(0);
+
+  const handleDoubleTap = useCallback(
+    (e: React.TouchEvent) => {
+      const now = Date.now();
+
+      const isDoubleTap = now - lastTapRef.current < 300;
+
+      if (
+        isDoubleTap &&
+        !locked &&
+        (element.type === "text" || element.type === "date")
+      ) {
+        e.stopPropagation();
+        startEditing();
+      }
+
+      lastTapRef.current = now;
+    },
+    [locked, element.type, startEditing]
+  );
+
+  const commitEdit = useCallback(() => { setIsEditing(false); }, []);
+
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault(); e.stopPropagation();
     setSelectedId(element.id);
@@ -179,12 +222,13 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
     <>
       <div
         onMouseDown={handleMouseDown}
-        onTouchStart={handleTouchStart}
+        onDoubleClick={handleDoubleClick}
+        onTouchStart={(e) => { handleDoubleTap(e); handleTouchStart(e); }}
         onContextMenu={handleContextMenu}
         className="absolute group"
         style={{
           left: x, top: y, width: w, height: h,
-          cursor: locked ? 'default' : isDragging ? 'grabbing' : 'grab',
+          cursor: isEditing ? 'text' : locked ? 'default' : isDragging ? 'grabbing' : 'grab',
           touchAction: 'none',
         }}
       >
@@ -193,11 +237,39 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
           <img src={element.dataUrl} alt="Signature"
             className="w-full h-full object-contain pointer-events-none select-none" draggable={false} />
         )}
+
         {(element.type === 'text' || element.type === 'date') && (
-          <div className="w-full h-full flex items-center px-2 overflow-hidden pointer-events-none select-none"
-            style={{ fontSize: element.fontSize * scale, fontFamily: element.fontFamily, color: element.color, whiteSpace: 'nowrap' }}>
-            {element.content}
-          </div>
+          isEditing ? (
+            <textarea
+              ref={editInputRef}
+              value={element.content}
+              onChange={(e) => updateElement(element.id, { content: e.target.value })}
+              onBlur={commitEdit}
+              onKeyDown={(e) => { if (e.key === 'Escape') commitEdit(); e.stopPropagation(); }}
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              className="w-full h-full bg-transparent resize-none focus:outline-none"
+              style={{
+                fontSize: element.fontSize * scale,
+                fontFamily: element.fontFamily,
+                color: element.color,
+                lineHeight: 1.2,
+                padding: '4px 8px',
+                overflow: 'hidden',
+                cursor: 'text',
+                display: 'flex',
+                alignItems: 'center',
+              }}
+              rows={1}
+            />
+          ) : (
+            <div
+              className="w-full h-full flex items-center px-2 overflow-hidden pointer-events-none select-none"
+              style={{ fontSize: element.fontSize * scale, fontFamily: element.fontFamily, color: element.color, whiteSpace: 'nowrap' }}
+            >
+              {element.content}
+            </div>
+          )
         )}
 
         <div className="absolute inset-0 rounded pointer-events-none transition-all"
@@ -239,27 +311,17 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
         )}
 
         {isSelected && !locked && handles.map((handle) => (
-          <div
-            key={handle}
-            data-handle={handle}
+          <div key={handle} data-handle={handle}
             onMouseDown={handleResizeDispatch}
             onTouchStart={handleResizeTouchDispatch}
             className="absolute z-50"
-            style={{
-              ...handlePos[handle],
-              width: 12, height: 12,
-              background: '#fff',
-              border: '2px solid var(--color-primary)',
-              borderRadius: 3,
-              touchAction: 'none',
-            }}
-          />
+            style={{ ...handlePos[handle], width: 12, height: 12, background: '#fff', border: '2px solid var(--color-primary)', borderRadius: 3, touchAction: 'none' }} />
         ))}
       </div>
 
       {ctxMenu && (
         <div
-          className="fixed z-200 py-1 min-w-45"
+          className="fixed z-[200] py-1 min-w-[180px]"
           style={{
             left: Math.min(ctxMenu.x, window.innerWidth - 190),
             top: Math.min(ctxMenu.y, window.innerHeight - 240),
