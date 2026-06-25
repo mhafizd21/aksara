@@ -3,7 +3,16 @@
 import { useCallback } from 'react';
 import { useStudioStore } from '@/stores/studio.store';
 import type { PdfElement, SignatureElement, TextField, DateField } from '@/types';
-import { dataUrlToUint8Array } from '@/lib/utils';
+
+function dataUrlToUint8Array(dataUrl: string): Uint8Array {
+  const base64 = dataUrl.split(',')[1];
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
 
 export function usePdfExport() {
   const { document: pdfDoc, elements, scale, setIsExporting, downloadFileName } = useStudioStore();
@@ -24,34 +33,34 @@ export function usePdfExport() {
         const { width: pdfW, height: pdfH } = page.getSize();
         const pageInfo = pdfDoc.pages[el.pageIndex];
 
-        // el.position / el.size are stored in scaled canvas pixels
-        // Convert: scaled px → unscaled PDF units → pdf-lib points
-        const pdfX      = (el.position.x / scale) * (pdfW / pageInfo.width);
-        const pdfYTop   = (el.position.y / scale) * (pdfH / pageInfo.height);
-        const pdfElW    = (el.size.width  / scale) * (pdfW / pageInfo.width);
-        const pdfElH    = (el.size.height / scale) * (pdfH / pageInfo.height);
-
-        // pdf-lib origin is bottom-left; flip Y
-        const pdfY = pdfH - pdfYTop - pdfElH;
+        const pdfX         = (el.position.x / scale) * (pdfW / pageInfo.width);
+        const pdfY_fromTop = (el.position.y / scale) * (pdfH / pageInfo.height);
+        const pdfElW       = (el.size.width  / scale) * (pdfW / pageInfo.width);
+        const pdfElH       = (el.size.height / scale) * (pdfH / pageInfo.height);
+        const pdfY         = pdfH - pdfY_fromTop - pdfElH;
 
         if (el.type === 'signature') {
           const sigEl = el as SignatureElement;
           try {
             const bytes = dataUrlToUint8Array(sigEl.dataUrl);
             const isPng = sigEl.dataUrl.startsWith('data:image/png');
-            const image = isPng ? await doc.embedPng(bytes) : await doc.embedJpg(bytes);
+            const image = isPng
+              ? await doc.embedPng(bytes)
+              : await doc.embedJpg(bytes);
             page.drawImage(image, { x: pdfX, y: pdfY, width: pdfElW, height: pdfElH });
-          } catch { /* skip corrupt */ }
+          } catch {
+            // Skip corrupt image
+          }
         } else if (el.type === 'text' || el.type === 'date') {
           const textEl = el as TextField | DateField;
           const font = await doc.embedFont(StandardFonts.Helvetica);
 
           const hexToRgb = (hex: string) => {
-            const c = hex.replace('#', '');
+            const clean = hex.replace('#', '');
             return rgb(
-              parseInt(c.slice(0, 2), 16) / 255,
-              parseInt(c.slice(2, 4), 16) / 255,
-              parseInt(c.slice(4, 6), 16) / 255,
+              parseInt(clean.slice(0, 2), 16) / 255,
+              parseInt(clean.slice(2, 4), 16) / 255,
+              parseInt(clean.slice(4, 6), 16) / 255,
             );
           };
 
@@ -73,12 +82,22 @@ export function usePdfExport() {
       const pdfBytes = await doc.save();
       const blob = new Blob([pdfBytes.buffer as ArrayBuffer], { type: 'application/pdf' });
       const url = URL.createObjectURL(blob);
+
+      const baseName = downloadFileName.trim()
+        || pdfDoc.file.name.replace(/\.pdf$/i, '') + '_signed';
+      const fileName = baseName.endsWith('.pdf') ? baseName : baseName + '.pdf';
+
+      // Mobile-compatible: append to body before click, remove after
       const a = window.document.createElement('a');
       a.href = url;
-      const baseName = downloadFileName.trim() || pdfDoc.file.name.replace(/\.pdf$/i, '') + '_signed';
-      a.download = baseName.endsWith('.pdf') ? baseName : baseName + '.pdf';
+      a.download = fileName;
+      a.style.display = 'none';
+      window.document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(url);
+      setTimeout(() => {
+        URL.revokeObjectURL(url);
+        window.document.body.removeChild(a);
+      }, 1000);
     } finally {
       setIsExporting(false);
     }

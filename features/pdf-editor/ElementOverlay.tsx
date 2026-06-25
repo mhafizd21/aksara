@@ -259,7 +259,7 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
 
       {ctxMenu && (
         <div
-          className="fixed z-[200] py-1 min-w-45"
+          className="fixed z-200 py-1 min-w-45"
           style={{
             left: Math.min(ctxMenu.x, window.innerWidth - 190),
             top: Math.min(ctxMenu.y, window.innerHeight - 240),
