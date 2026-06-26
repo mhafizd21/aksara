@@ -30,7 +30,7 @@ function mapToStandardFont(fontFamily: string, StandardFonts: typeof import('pdf
 }
 
 export function usePdfExport() {
-  const { document: pdfDoc, elements, scale, setIsExporting, downloadFileName } = useStudioStore();
+  const { document: pdfDoc, elements, setIsExporting, downloadFileName } = useStudioStore();
 
   const exportPdf = useCallback(async () => {
     if (!pdfDoc) return;
@@ -46,12 +46,21 @@ export function usePdfExport() {
         if (!page) return;
 
         const { width: pdfW, height: pdfH } = page.getSize();
+        // pageInfo dimensions are at scale=1 (native PDF units from pdfjs viewport)
         const pageInfo = pdfDoc.pages[el.pageIndex];
 
-        const pdfX         = (el.position.x / scale) * (pdfW / pageInfo.width);
-        const pdfY_fromTop = (el.position.y / scale) * (pdfH / pageInfo.height);
-        const pdfElW       = (el.size.width  / scale) * (pdfW / pageInfo.width);
-        const pdfElH       = (el.size.height / scale) * (pdfH / pageInfo.height);
+        // el.position and el.size are stored in scale=1 (unscaled) units
+        // pageInfo.width == pdfjs viewport.width at scale=1, which equals pdfW from pdf-lib
+        // So the ratio pdfW / pageInfo.width ≈ 1 for most PDFs
+        // We just map directly: pdfX = el.position.x * (pdfW / pageInfo.width)
+        const scaleX = pdfW / pageInfo.width;
+        const scaleY = pdfH / pageInfo.height;
+
+        const pdfX         = el.position.x * scaleX;
+        const pdfY_fromTop = el.position.y * scaleY;
+        const pdfElW       = el.size.width  * scaleX;
+        const pdfElH       = el.size.height * scaleY;
+        // PDF coordinate system: origin at bottom-left
         const pdfY         = pdfH - pdfY_fromTop - pdfElH;
 
         if (el.type === 'signature') {
@@ -80,7 +89,8 @@ export function usePdfExport() {
             );
           };
 
-          const pdfFontSize = (textEl.fontSize / scale) * (pdfW / pageInfo.width);
+          // fontSize is stored unscaled; apply same scaleX to keep proportional
+          const pdfFontSize = textEl.fontSize * scaleX;
           const textY = pdfY + (pdfElH - pdfFontSize) / 2 + pdfFontSize * 0.2;
 
           page.drawText(textEl.content, {
@@ -103,7 +113,6 @@ export function usePdfExport() {
         || pdfDoc.file.name.replace(/\.pdf$/i, '') + '_signed';
       const fileName = baseName.endsWith('.pdf') ? baseName : baseName + '.pdf';
 
-      // Mobile-compatible: append to body before click, remove after
       const a = window.document.createElement('a');
       a.href = url;
       a.download = fileName;
@@ -117,7 +126,7 @@ export function usePdfExport() {
     } finally {
       setIsExporting(false);
     }
-  }, [pdfDoc, elements, scale, setIsExporting, downloadFileName]);
+  }, [pdfDoc, elements, setIsExporting, downloadFileName]);
 
   return { exportPdf };
 }

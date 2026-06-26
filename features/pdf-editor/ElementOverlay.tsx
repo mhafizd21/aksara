@@ -61,7 +61,6 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
 
     const wasAlreadySelected = selectedIds.includes(element.id);
 
-    // Shift+click: toggle in selection
     if (e.shiftKey) {
       if (wasAlreadySelected) {
         removeFromSelection(element.id);
@@ -71,9 +70,7 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
       return;
     }
 
-    // Normal click: if clicking an already-selected element in multi-select, keep selection
     if (wasAlreadySelected && isMultiSelect) {
-      // just set this as primary without clearing others
       useStudioStore.setState({ selectedId: element.id });
     } else if (!wasAlreadySelected) {
       setSelectedId(element.id);
@@ -83,7 +80,6 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
     didMoveRef.current = false;
     dragStartRef.current = { mouseX: e.clientX, mouseY: e.clientY, elX: element.position.x, elY: element.position.y };
 
-    // For multi-select drag: we track all selected elements' start positions
     const state = useStudioStore.getState();
     const multiDragStarts = state.selectedIds
       .filter((id) => !state.lockedIds[id])
@@ -227,7 +223,10 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
     [locked, element.type, startEditing]
   );
 
-  const commitEdit = useCallback(() => { setIsEditing(false); }, []);
+  // On blur: stop editing AND deselect so user can immediately click another element
+  const commitEdit = useCallback(() => {
+    setIsEditing(false);
+  }, []);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault(); e.stopPropagation();
@@ -260,7 +259,6 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
     { label: 'Duplicate', shortcut: '⌘D', icon: Clipboard, onClick: () => { duplicateElement(element.id); setCtxMenu(null); }, disabled: locked },
   ];
 
-  // Selection outline color
   const outlineColor = locked ? '#F59E0B' : isMultiSelect && isSelected ? '#6366F1' : 'var(--color-primary)';
   const outlineStyle = isMultiSelect && isSelected && !isPrimary ? '2px dashed' : '2px solid';
 
@@ -335,7 +333,6 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
           </div>
         )}
 
-        {/* Toolbar: show for single-select primary or multi-select primary */}
         {isPrimary && (
           <div
             className="absolute -top-10 left-0 flex items-center gap-1 px-1.5 py-1 z-50"
@@ -374,7 +371,6 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
           </div>
         )}
 
-        {/* Resize handles: only on primary selected, non-locked, single-select */}
         {isPrimary && !locked && !isMultiSelect && handles.map((handle) => (
           <div key={handle} data-handle={handle}
             onMouseDown={handleResizeDispatch}

@@ -28,8 +28,8 @@ export function useKeyboardShortcuts() {
       if (mod && e.key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); return; }
       if (mod && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) { e.preventDefault(); redo(); return; }
 
-      // Escape to clear multi-selection
-      if (e.key === 'Escape' && selectedIds.length > 1) { e.preventDefault(); clearSelection(); return; }
+      // Escape to clear selection
+      if (e.key === 'Escape') { e.preventDefault(); clearSelection(); return; }
 
       // Delete / Backspace
       if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -62,6 +62,32 @@ export function useKeyboardShortcuts() {
           }
         }
         pasteElement();
+        return;
+      }
+
+      // Arrow keys: move selected element(s)
+      // Shift+Arrow = large step (10px), Arrow = small step (1px)
+      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+        const { selectedIds: ids, lockedIds, elements, updateElement, pushHistory } = useStudioStore.getState();
+        if (ids.length === 0) return;
+        e.preventDefault();
+
+        const step = e.shiftKey ? 10 : 1;
+        const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
+        const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
+
+        pushHistory();
+        for (const id of ids) {
+          if (lockedIds[id]) continue;
+          const el = elements.find((el) => el.id === id);
+          if (!el) continue;
+          updateElement(id, {
+            position: {
+              x: Math.max(0, el.position.x + dx),
+              y: Math.max(0, el.position.y + dy),
+            },
+          });
+        }
         return;
       }
     };
