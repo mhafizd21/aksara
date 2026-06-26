@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, useCallback, useEffect } from 'react';
-import { Trash2, Copy, Scissors, Clipboard, GripHorizontal, Lock, Unlock } from 'lucide-react';
+import { Trash2, Copy, Scissors, Clipboard, GripHorizontal, Lock, Unlock, RotateCw } from 'lucide-react';
 import type { PdfElement } from '@/types';
 import { useStudioStore } from '@/stores/studio.store';
 
@@ -19,7 +19,7 @@ function getClient(e: MouseEvent | TouchEvent): { clientX: number; clientY: numb
 
 export function ElementOverlay({ element, scale }: ElementOverlayProps) {
   const {
-    selectedId, selectedIds, setSelectedId, setSelectedIds, addToSelection, removeFromSelection,
+    selectedId, selectedIds, setSelectedId, addToSelection, removeFromSelection,
     updateElement, deleteElement, duplicateElement,
     copyElement, cutElement, pasteElement, clipboard, pushHistory, toggleLock,
     deleteSelectedElements, duplicateSelectedElements,
@@ -39,6 +39,8 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
   const [isEditing, setIsEditing] = useState(false);
   const editInputRef = useRef<HTMLTextAreaElement>(null);
 
+  const rotation = element.rotation ?? 0;
+
   useEffect(() => {
     if (!ctxMenu) return;
     const close = () => setCtxMenu(null);
@@ -49,10 +51,7 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
 
   const startEditing = useCallback(() => {
     setIsEditing(true);
-    setTimeout(() => {
-      editInputRef.current?.focus();
-      editInputRef.current?.select();
-    }, 0);
+    setTimeout(() => { editInputRef.current?.focus(); editInputRef.current?.select(); }, 0);
   }, []);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -62,11 +61,8 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
     const wasAlreadySelected = selectedIds.includes(element.id);
 
     if (e.shiftKey) {
-      if (wasAlreadySelected) {
-        removeFromSelection(element.id);
-      } else {
-        addToSelection(element.id);
-      }
+      if (wasAlreadySelected) removeFromSelection(element.id);
+      else addToSelection(element.id);
       return;
     }
 
@@ -84,7 +80,7 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
     const multiDragStarts = state.selectedIds
       .filter((id) => !state.lockedIds[id])
       .map((id) => {
-        const el = state.elements.find((e) => e.id === id);
+        const el = state.elements.find((el) => el.id === id);
         return el ? { id, startX: el.position.x, startY: el.position.y } : null;
       })
       .filter(Boolean) as { id: string; startX: number; startY: number }[];
@@ -95,11 +91,9 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
       if (!didMoveRef.current) { pushHistory(); didMoveRef.current = true; setIsDragging(true); }
       const dx = (ev.clientX - dragStartRef.current.mouseX) / scale;
       const dy = (ev.clientY - dragStartRef.current.mouseY) / scale;
-
       if (multiDragStarts.length > 1) {
-        for (const { id, startX, startY } of multiDragStarts) {
+        for (const { id, startX, startY } of multiDragStarts)
           updateElement(id, { position: { x: Math.max(0, startX + dx), y: Math.max(0, startY + dy) } });
-        }
       } else {
         updateElement(element.id, { position: { x: Math.max(0, dragStartRef.current.elX + dx), y: Math.max(0, dragStartRef.current.elY + dy) } });
       }
@@ -109,9 +103,8 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
       setIsDragging(false);
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
-      if (!didMoveRef.current && wasAlreadySelected && !isMultiSelect && (element.type === 'text' || element.type === 'date')) {
+      if (!didMoveRef.current && wasAlreadySelected && !isMultiSelect && (element.type === 'text' || element.type === 'date'))
         startEditing();
-      }
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
@@ -121,15 +114,10 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
     e.stopPropagation();
     const t = e.touches[0];
     setSelectedId(element.id);
-
-    longPressTimer.current = setTimeout(() => {
-      setCtxMenu({ x: t.clientX, y: t.clientY });
-    }, 600);
-
+    longPressTimer.current = setTimeout(() => { setCtxMenu({ x: t.clientX, y: t.clientY }); }, 600);
     if (locked) return;
     didMoveRef.current = false;
     dragStartRef.current = { mouseX: t.clientX, mouseY: t.clientY, elX: element.position.x, elY: element.position.y };
-
     const onMove = (ev: TouchEvent) => {
       if (!dragStartRef.current) return;
       if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
@@ -160,7 +148,6 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
       startX: element.position.x, startY: element.position.y,
       startW: element.size.width, startH: element.size.height,
     };
-
     const applyResize = (cx: number, cy: number) => {
       if (!resizeRef.current) return;
       const r = resizeRef.current;
@@ -173,7 +160,6 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
       if (handle.includes('n')) { newH = Math.max(MIN_SIZE, r.startH - dy); newY = r.startY + r.startH - newH; }
       updateElement(element.id, { position: { x: newX, y: newY }, size: { width: newW, height: newH } });
     };
-
     const onMouseMove = (ev: MouseEvent) => applyResize(ev.clientX, ev.clientY);
     const onTouchMove = (ev: TouchEvent) => { ev.preventDefault(); applyResize(ev.touches[0].clientX, ev.touches[0].clientY); };
     const onUp = () => {
@@ -201,6 +187,44 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
     if (handle) startResize(e.touches[0].clientX, e.touches[0].clientY, handle);
   }, [startResize]);
 
+  const startRotate = useCallback((clientX: number, clientY: number) => {
+    if (locked) return;
+    pushHistory();
+    const canvas = document.querySelector('[data-pdf-canvas]') as HTMLElement | null;
+    const canvasRect = canvas?.getBoundingClientRect();
+    const cx = (element.position.x + element.size.width / 2) * scale + (canvasRect?.left ?? 0);
+    const cy = (element.position.y + element.size.height / 2) * scale + (canvasRect?.top ?? 0);
+    const startAngle = Math.atan2(clientY - cy, clientX - cx) * (180 / Math.PI);
+    const startRotation = element.rotation ?? 0;
+    const onMove = (ev: MouseEvent | TouchEvent) => {
+      const { clientX: mx, clientY: my } = getClient(ev);
+      const angle = Math.atan2(my - cy, mx - cx) * (180 / Math.PI);
+      let delta = angle - startAngle;
+      if ((ev as MouseEvent).shiftKey) delta = Math.round(delta / 15) * 15;
+      updateElement(element.id, { rotation: ((startRotation + delta) % 360 + 360) % 360 });
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    window.addEventListener('touchmove', onMove, { passive: false });
+    window.addEventListener('touchend', onUp);
+  }, [element, scale, locked, updateElement, pushHistory]);
+
+  const handleRotateMouseDown = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation(); e.preventDefault();
+    startRotate(e.clientX, e.clientY);
+  }, [startRotate]);
+
+  const handleRotateTouchStart = useCallback((e: React.TouchEvent) => {
+    e.stopPropagation(); e.preventDefault();
+    startRotate(e.touches[0].clientX, e.touches[0].clientY);
+  }, [startRotate]);
+
   const handleDoubleClick = useCallback((e: React.MouseEvent) => {
     if (locked || (element.type !== 'text' && element.type !== 'date')) return;
     e.stopPropagation();
@@ -209,24 +233,15 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
   }, [locked, element.type]);
 
   const lastTapRef = useRef(0);
+  const handleDoubleTap = useCallback((e: React.TouchEvent) => {
+    const now = Date.now();
+    if (now - lastTapRef.current < 300 && !locked && (element.type === 'text' || element.type === 'date')) {
+      e.stopPropagation(); startEditing();
+    }
+    lastTapRef.current = now;
+  }, [locked, element.type, startEditing]);
 
-  const handleDoubleTap = useCallback(
-    (e: React.TouchEvent) => {
-      const now = Date.now();
-      const isDoubleTap = now - lastTapRef.current < 300;
-      if (isDoubleTap && !locked && (element.type === 'text' || element.type === 'date')) {
-        e.stopPropagation();
-        startEditing();
-      }
-      lastTapRef.current = now;
-    },
-    [locked, element.type, startEditing]
-  );
-
-  // On blur: stop editing AND deselect so user can immediately click another element
-  const commitEdit = useCallback(() => {
-    setIsEditing(false);
-  }, []);
+  const commitEdit = useCallback(() => { setIsEditing(false); }, []);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault(); e.stopPropagation();
@@ -257,6 +272,7 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
     { label: 'Cut', shortcut: '⌘X', icon: Scissors, onClick: () => { cutElement(element.id); setCtxMenu(null); }, disabled: locked },
     { label: 'Paste', shortcut: '⌘V', icon: Clipboard, disabled: !clipboard, onClick: () => { pasteElement(element.position.x + element.size.width + 10, element.position.y); setCtxMenu(null); } },
     { label: 'Duplicate', shortcut: '⌘D', icon: Clipboard, onClick: () => { duplicateElement(element.id); setCtxMenu(null); }, disabled: locked },
+    { label: 'Reset rotation', icon: RotateCw, onClick: () => { updateElement(element.id, { rotation: 0 }); setCtxMenu(null); }, disabled: locked || rotation === 0 },
   ];
 
   const outlineColor = locked ? '#F59E0B' : isMultiSelect && isSelected ? '#6366F1' : 'var(--color-primary)';
@@ -272,6 +288,8 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
         className="absolute group"
         style={{
           left: x, top: y, width: w, height: h,
+          transform: rotation ? `rotate(${rotation}deg)` : undefined,
+          transformOrigin: 'center center',
           cursor: isEditing ? 'text' : locked ? 'default' : isDragging ? 'grabbing' : 'grab',
           touchAction: 'none',
         }}
@@ -293,17 +311,7 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
               onClick={(e) => e.stopPropagation()}
               onMouseDown={(e) => e.stopPropagation()}
               className="w-full h-full bg-transparent resize-none focus:outline-none"
-              style={{
-                fontSize: element.fontSize * scale,
-                fontFamily: element.fontFamily,
-                color: element.color,
-                lineHeight: 1.2,
-                padding: '4px 8px',
-                overflow: 'hidden',
-                cursor: 'text',
-                display: 'flex',
-                alignItems: 'center',
-              }}
+              style={{ fontSize: element.fontSize * scale, fontFamily: element.fontFamily, color: element.color, lineHeight: 1.2, padding: '4px 8px', overflow: 'hidden', cursor: 'text' }}
               rows={1}
             />
           ) : (
@@ -317,10 +325,7 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
         )}
 
         <div className="absolute inset-0 rounded pointer-events-none transition-all"
-          style={{
-            outline: isSelected ? `${outlineStyle} ${outlineColor}` : '1.5px solid transparent',
-            outlineOffset: 0,
-          }} />
+          style={{ outline: isSelected ? `${outlineStyle} ${outlineColor}` : '1.5px solid transparent', outlineOffset: 0 }} />
         {!isSelected && (
           <div className="absolute inset-0 rounded pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"
             style={{ outline: `1.5px solid ${locked ? '#F59E0B' : 'var(--color-primary)'}`, outlineOffset: 0 }} />
@@ -362,6 +367,14 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
                   <>
                     <FBtn icon={Scissors} title="Cut (⌘X)" onClick={() => cutElement(element.id)} />
                     <FBtn icon={Clipboard} title="Duplicate (⌘D)" onClick={() => duplicateElement(element.id)} />
+                    {/* Rotate button di toolbar, setelah duplicate */}
+                    <div className="w-px h-3.5" style={{ background: 'var(--color-border)' }} />
+                    <FBtn
+                      icon={RotateCw}
+                      title={`Rotate · drag handle at bottom-right · Shift=15° snap · current: ${Math.round(rotation)}°`}
+                      onClick={() => updateElement(element.id, { rotation: ((rotation + 15) % 360) })}
+                      iconStyle={{ color: rotation !== 0 ? 'var(--color-primary)' : 'var(--color-text-secondary)' }}
+                    />
                   </>
                 )}
                 <div className="w-px h-3.5" style={{ background: 'var(--color-border)' }} />
@@ -371,6 +384,7 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
           </div>
         )}
 
+        {/* Resize handles */}
         {isPrimary && !locked && !isMultiSelect && handles.map((handle) => (
           <div key={handle} data-handle={handle}
             onMouseDown={handleResizeDispatch}
@@ -378,6 +392,51 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
             className="absolute z-50"
             style={{ ...handlePos[handle], width: 12, height: 12, background: '#fff', border: '2px solid var(--color-primary)', borderRadius: 3, touchAction: 'none' }} />
         ))}
+
+        {/* Rotate handle — pojok kanan bawah, tidak overlap toolbar */}
+        {isPrimary && !locked && !isMultiSelect && (
+          <div
+            onMouseDown={handleRotateMouseDown}
+            onTouchStart={handleRotateTouchStart}
+            className="absolute z-50 flex items-center justify-center"
+            title="Drag to rotate · Shift = snap 15°"
+            style={{
+              bottom: -24,
+              right: -24,
+              width: 20,
+              height: 20,
+              background: '#fff',
+              border: '2px solid var(--color-primary)',
+              borderRadius: '50%',
+              cursor: 'crosshair',
+              touchAction: 'none',
+              boxShadow: 'var(--shadow-md)',
+            }}
+          >
+            <RotateCw className="w-2.5 h-2.5" style={{ color: 'var(--color-primary)' }} />
+          </div>
+        )}
+
+        {/* Rotation badge */}
+        {isPrimary && !isMultiSelect && rotation !== 0 && (
+          <div
+            className="absolute pointer-events-none z-50"
+            style={{
+              bottom: -22,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              background: 'var(--color-primary)',
+              color: '#fff',
+              fontSize: 9,
+              fontWeight: 600,
+              padding: '1px 5px',
+              borderRadius: 4,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {Math.round(rotation)}°
+          </div>
+        )}
       </div>
 
       {ctxMenu && (
@@ -385,7 +444,7 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
           className="fixed z-[200] py-1 min-w-[180px]"
           style={{
             left: Math.min(ctxMenu.x, window.innerWidth - 190),
-            top: Math.min(ctxMenu.y, window.innerHeight - 240),
+            top: Math.min(ctxMenu.y, window.innerHeight - 280),
             background: 'var(--color-background)',
             border: '1px solid var(--color-border)',
             borderRadius: 'var(--radius-dropdown)',
