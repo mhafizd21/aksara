@@ -311,8 +311,8 @@ function PanelContent({ selected, updateElement, deleteElement }: {
             {[
               { label: 'X', value: Math.round(selected.position.x), onChange: (v: number) => updateElement(selected.id, { position: { ...selected.position, x: v } }) },
               { label: 'Y', value: Math.round(selected.position.y), onChange: (v: number) => updateElement(selected.id, { position: { ...selected.position, y: v } }) },
-              { label: 'W', value: Math.round(selected.size.width), min: 40, onChange: (v: number) => updateElement(selected.id, { size: { ...selected.size, width: v } }) },
-              { label: 'H', value: Math.round(selected.size.height), min: 20, onChange: (v: number) => updateElement(selected.id, { size: { ...selected.size, height: v } }) },
+              { label: 'W', value: Math.round(selected.size.width), min: 1, onChange: (v: number) => updateElement(selected.id, { size: { ...selected.size, width: v } }) },
+              { label: 'H', value: Math.round(selected.size.height), min: 1, onChange: (v: number) => updateElement(selected.id, { size: { ...selected.size, height: v } }) },
               { label: '°', value: Math.round(selected.rotation ?? 0), onChange: (v: number) => updateElement(selected.id, { rotation: ((v % 360) + 360) % 360 }) },
             ].map(({ label, value, min, onChange }) => (
               <NumberInput key={label} label={label} value={value} min={min} onChange={onChange} />
@@ -421,8 +421,8 @@ export function MobilePropertiesSheet() {
                       {[
                         { label: 'X', value: Math.round(selected.position.x), onChange: (v: number) => updateElement(selected.id, { position: { ...selected.position, x: v } }) },
                         { label: 'Y', value: Math.round(selected.position.y), onChange: (v: number) => updateElement(selected.id, { position: { ...selected.position, y: v } }) },
-                        { label: 'W', value: Math.round(selected.size.width), min: 40, onChange: (v: number) => updateElement(selected.id, { size: { ...selected.size, width: v } }) },
-                        { label: 'H', value: Math.round(selected.size.height), min: 20, onChange: (v: number) => updateElement(selected.id, { size: { ...selected.size, height: v } }) },
+                        { label: 'W', value: Math.round(selected.size.width), min: 1, onChange: (v: number) => updateElement(selected.id, { size: { ...selected.size, width: v } }) },
+                        { label: 'H', value: Math.round(selected.size.height), min: 1, onChange: (v: number) => updateElement(selected.id, { size: { ...selected.size, height: v } }) },
                         { label: '°', value: Math.round(selected.rotation ?? 0), onChange: (v: number) => updateElement(selected.id, { rotation: ((v % 360) + 360) % 360 }) },
                       ].map(({ label, value, min, onChange }) => (
                         <NumberInput key={label} label={label} value={value} min={min} onChange={onChange} />

@@ -7,7 +7,7 @@ import { useStudioStore } from '@/stores/studio.store';
 
 interface ElementOverlayProps { element: PdfElement; scale: number; }
 type ResizeHandle = 'se' | 'sw' | 'ne' | 'nw' | 'e' | 'w' | 'n' | 's';
-const MIN_SIZE = 40;
+const MIN_SIZE = 1;
 
 function getClient(e: MouseEvent | TouchEvent): { clientX: number; clientY: number } {
   if ('touches' in e && e.touches.length > 0)
