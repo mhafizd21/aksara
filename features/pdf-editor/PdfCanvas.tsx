@@ -20,6 +20,7 @@ export function PdfCanvas() {
   } = useStudioStore();
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const [ghostPos, setGhostPos] = useState<{ x: number; y: number } | null>(null);
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; elX: number; elY: number } | null>(null);
 
@@ -58,6 +59,14 @@ export function PdfCanvas() {
     const canvasY = clientY - rect.top;
     const s = useStudioStore.getState().scale;
     return { canvasX, canvasY, pdfX: canvasX / s, pdfY: canvasY / s };
+  }, []);
+
+  // Returns true when the PDF canvas is wider than its scroll container,
+  // i.e. the user has zoomed in past the point where it fits the viewport.
+  const isHorizontallyOverflowing = useCallback(() => {
+    const el = wrapperRef.current;
+    if (!el) return false;
+    return el.scrollWidth > el.clientWidth + 1;
   }, []);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
@@ -222,7 +231,11 @@ export function PdfCanvas() {
     const t = e.touches[0];
     if (!containerRef.current) return;
 
-    swipeRef.current = { startX: t.clientX, startY: t.clientY, startPage: currentPage };
+    // While zoomed in (canvas wider than the viewport), let the browser handle
+    // horizontal panning natively instead of hijacking the gesture for page-swipe.
+    swipeRef.current = isHorizontallyOverflowing()
+      ? null
+      : { startX: t.clientX, startY: t.clientY, startPage: currentPage };
     isPinchingRef.current = false;
     setSwipeOffset(0);
 
@@ -233,7 +246,7 @@ export function PdfCanvas() {
       swipeRef.current = null;
       setCtxMenu(pos);
     }, 600);
-  }, [isPlacingSignature, scale, currentPage, getCanvasCoords]);
+  }, [isPlacingSignature, scale, currentPage, getCanvasCoords, isHorizontallyOverflowing]);
 
   const handleTouchMove = useCallback((e: React.TouchEvent) => {
     if (e.touches.length === 2 && pinchRef.current) {
@@ -255,7 +268,8 @@ export function PdfCanvas() {
       if (moved) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
     }
 
-    if (swipeRef.current && pdfDoc && !isPinchingRef.current) {
+    // Swipe-to-change-page only applies when the canvas isn't zoomed past the viewport.
+    if (swipeRef.current && pdfDoc && !isPinchingRef.current && !isHorizontallyOverflowing()) {
       const dx = t.clientX - swipeRef.current.startX;
       const dy = t.clientY - swipeRef.current.startY;
       if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 10) {
@@ -268,7 +282,7 @@ export function PdfCanvas() {
       const { canvasX, canvasY } = getCanvasCoords(t.clientX, t.clientY);
       setGhostPos({ x: canvasX, y: canvasY });
     }
-  }, [isPlacingSignature, setScale, pdfDoc, getCanvasCoords]);
+  }, [isPlacingSignature, setScale, pdfDoc, getCanvasCoords, isHorizontallyOverflowing]);
 
   const handleTouchEnd = useCallback((e: React.TouchEvent) => {
     if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
@@ -353,7 +367,7 @@ export function PdfCanvas() {
       )}
 
       {/* Canvas wrapper */}
-      <div className="flex-1 overflow-auto flex items-start justify-center w-full p-3 sm:p-8">
+      <div ref={wrapperRef} className="flex-1 overflow-auto flex items-start justify-center w-full p-3 sm:p-8">
         {isPlacingSignature && (
           <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium pointer-events-none"
             style={{ background: 'var(--color-primary)', color: '#fff', boxShadow: 'var(--shadow-md)' }}>
@@ -381,7 +395,7 @@ export function PdfCanvas() {
             background: '#fff',
             boxShadow: '0 4px 24px 0 rgb(0 0 0 / 0.10), 0 1px 4px 0 rgb(0 0 0 / 0.06)',
             borderRadius: 2,
-            touchAction: isPlacingSignature ? 'none' : 'pan-y',
+            touchAction: isPlacingSignature ? 'none' : 'pan-x pan-y',
             transform: swipeOffset ? `translateX(${Math.max(-40, Math.min(40, swipeOffset * 0.3))}px)` : undefined,
             transition: swipeOffset === 0 ? 'transform 0.2s ease' : undefined,
           }}
