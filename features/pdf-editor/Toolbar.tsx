@@ -4,12 +4,14 @@ import { useRef, useCallback, useState } from 'react';
 import {
   Upload, Type, Calendar, PenLine, Undo2, Redo2,
   Download, Loader2, ChevronLeft, ChevronRight, X,
-  Menu, FileEdit,
+  Menu, FileEdit, Check, Circle, Star, Shapes,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useStudioStore } from '@/stores/studio.store';
 import { usePdfLoader } from '@/hooks/usePdfLoader';
 import { usePdfExport } from '@/hooks/usePdfExport';
+import { SYMBOL_SHAPES, SYMBOL_DEFAULT_COLOR, SYMBOL_PRESET_COLORS } from '@/lib/constants';
+import type { SymbolShape } from '@/types';
 import Image from 'next/image';
 
 export function Toolbar() {
@@ -19,6 +21,7 @@ export function Toolbar() {
     isExporting, setSignatureModalOpen, currentPage, setCurrentPage,
     pendingSignatureDataUrl, cancelSignaturePlacement,
     downloadFileName, setDownloadFileName,
+    selectedSymbolShape, selectedSymbolColor, setSelectedSymbolShape, setSelectedSymbolColor,
   } = useStudioStore();
 
   const { loading, error, loadPdf } = usePdfLoader();
@@ -26,6 +29,7 @@ export function Toolbar() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [editingFileName, setEditingFileName] = useState(false);
+  const [symbolPickerOpen, setSymbolPickerOpen] = useState(false);
 
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -45,6 +49,17 @@ export function Toolbar() {
     { id: 'date' as const, icon: Calendar, label: 'Date', shortcut: 'D' },
     { id: 'signature' as const, icon: PenLine, label: 'Sign', shortcut: 'S' },
   ];
+
+  const SYMBOL_ICONS: Record<SymbolShape, React.ComponentType<{ className?: string; style?: React.CSSProperties }>> = {
+    check: Check, cross: X, circle: Circle, star: Star,
+  };
+
+  const pickSymbol = (shape: SymbolShape) => {
+    setSelectedSymbolShape(shape);
+    setActiveToolMode('symbol');
+    setSymbolPickerOpen(false);
+    setMobileMenuOpen(false);
+  };
 
   const handleToolClick = (id: 'text' | 'date' | 'signature') => {
     if (id === 'signature') { setSignatureModalOpen(true); }
@@ -96,13 +111,53 @@ export function Toolbar() {
             </button>
           </div>
         ) : (
-          <div className="hidden md:flex items-center gap-1 ml-1">
+          <div className="hidden md:flex items-center gap-1 relative">
             <div className="w-px h-5 shrink-0" style={{ background: 'var(--color-border)' }} />
             {tools.map((tool) => (
               <ToolBtn key={tool.id} icon={tool.icon} label={tool.label} shortcut={tool.shortcut}
                 active={activeToolMode === tool.id} disabled={!pdfDoc}
                 onClick={() => handleToolClick(tool.id)} />
             ))}
+            <ToolBtn icon={Shapes} label="Symbol" shortcut="K" disabled={!pdfDoc}
+              active={activeToolMode === 'symbol'}
+              onClick={() => setSymbolPickerOpen((v) => !v)} />
+
+            {symbolPickerOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setSymbolPickerOpen(false)} />
+                <div className="absolute top-full left-0 mt-2 z-50 p-3 rounded-xl"
+                  style={{ background: 'var(--color-background)', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-md)', width: 220 }}
+                  onClick={(e) => e.stopPropagation()}>
+                  <p className="label mb-2">Symbol shape</p>
+                  <div className="grid grid-cols-4 gap-1.5 mb-3">
+                    {SYMBOL_SHAPES.map((shape) => {
+                      const Icon = SYMBOL_ICONS[shape];
+                      return (
+                        <button key={shape} onClick={() => pickSymbol(shape)}
+                          title={shape}
+                          className="flex items-center justify-center h-9 rounded-lg transition-colors"
+                          style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+                          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = '#EEF2FF'; }}
+                          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--color-surface)'; }}>
+                          <Icon className="w-4 h-4" style={{ color: SYMBOL_DEFAULT_COLOR[shape] }} />
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="label mb-2">Color</p>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {SYMBOL_PRESET_COLORS.map((c) => (
+                      <button key={c} onClick={() => setSelectedSymbolColor(c)}
+                        className="w-6 h-6 rounded-full shrink-0"
+                        style={{ background: c, border: selectedSymbolColor === c ? '2px solid var(--color-primary)' : '1px solid var(--color-border)' }} />
+                    ))}
+                    <input type="color" value={selectedSymbolColor}
+                      onChange={(e) => setSelectedSymbolColor(e.target.value)}
+                      className="w-6 h-6 rounded-full cursor-pointer shrink-0" />
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         )}
 
@@ -193,6 +248,31 @@ export function Toolbar() {
                   active={activeToolMode === tool.id} disabled={!pdfDoc}
                   onClick={() => handleToolClick(tool.id)} />
               ))}
+              {!isPlacing && pdfDoc && (
+                <div className="px-3 py-1.5">
+                  <p className="text-xs font-medium mb-1.5" style={{ color: 'var(--color-text-secondary)' }}>Symbol</p>
+                  <div className="grid grid-cols-4 gap-1.5 mb-2">
+                    {SYMBOL_SHAPES.map((shape) => {
+                      const Icon = SYMBOL_ICONS[shape];
+                      const active = activeToolMode === 'symbol' && selectedSymbolShape === shape;
+                      return (
+                        <button key={shape} onClick={() => pickSymbol(shape)}
+                          className="flex items-center justify-center h-9 rounded-lg"
+                          style={{ background: active ? '#EEF2FF' : 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
+                          <Icon className="w-4 h-4" style={{ color: SYMBOL_DEFAULT_COLOR[shape] }} />
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {SYMBOL_PRESET_COLORS.map((c) => (
+                      <button key={c} onClick={() => setSelectedSymbolColor(c)}
+                        className="w-6 h-6 rounded-full shrink-0"
+                        style={{ background: c, border: selectedSymbolColor === c ? '2px solid var(--color-primary)' : '1px solid var(--color-border)' }} />
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="h-px mx-1 my-2" style={{ background: 'var(--color-border)' }} />
               <p className="label px-3 py-1">History</p>
               <div className="flex gap-1">

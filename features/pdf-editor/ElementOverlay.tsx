@@ -300,6 +300,26 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
             className="w-full h-full object-contain pointer-events-none select-none" draggable={false} />
         )}
 
+        {element.type === 'symbol' && (
+          <svg viewBox="0 0 100 100" className="w-full h-full pointer-events-none select-none" style={{ display: 'block' }}>
+            {element.shape === 'check' && (
+              <path d="M20 52 L40 72 L82 28" fill="none" stroke={element.color}
+                strokeWidth={element.strokeWidth * 100} strokeLinecap="round" strokeLinejoin="round" />
+            )}
+            {element.shape === 'cross' && (
+              <path d="M22 22 L78 78 M78 22 L22 78" fill="none" stroke={element.color}
+                strokeWidth={element.strokeWidth * 100} strokeLinecap="round" />
+            )}
+            {element.shape === 'circle' && (
+              <circle cx="50" cy="50" r="42" fill="none" stroke={element.color}
+                strokeWidth={element.strokeWidth * 100} />
+            )}
+            {element.shape === 'star' && (
+              <path d="M50 5 L61 38 L97 38 L67 59 L78 92 L50 71 L22 92 L33 59 L3 38 L39 38 Z" fill={element.color} />
+            )}
+          </svg>
+        )}
+
         {(element.type === 'text' || element.type === 'date') && (
           isEditing ? (
             <textarea

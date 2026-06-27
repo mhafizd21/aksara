@@ -12,7 +12,7 @@ export function PdfCanvas() {
   const {
     document: pdfDoc, currentPage, setCurrentPage, scale, setScale, elements,
     activeToolMode, setSelectedId, setSelectedIds, addToSelection, clearSelection,
-    addTextField, addDateField, setActiveToolMode,
+    addTextField, addDateField, addSymbolField, setActiveToolMode,
     pendingSignatureDataUrl, pendingSignatureSize,
     placeSignatureAtPosition, cancelSignaturePlacement,
     pasteElement, clipboard,
@@ -203,7 +203,8 @@ export function PdfCanvas() {
     }
     if (activeToolMode === 'text') { addTextField(currentPage, pdfX, pdfY); setActiveToolMode('select'); }
     else if (activeToolMode === 'date') { addDateField(currentPage, pdfX, pdfY); setActiveToolMode('select'); }
-  }, [activeToolMode, isPlacingSignature, currentPage, getCanvasCoords, addTextField, addDateField,
+    else if (activeToolMode === 'symbol') { addSymbolField(currentPage, pdfX, pdfY); setActiveToolMode('select'); }
+  }, [activeToolMode, isPlacingSignature, currentPage, getCanvasCoords, addTextField, addDateField, addSymbolField,
     setActiveToolMode, placeSignatureAtPosition]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
@@ -317,6 +318,7 @@ export function PdfCanvas() {
   const cursor = isPlacingSignature ? 'none'
     : activeToolMode === 'text' ? 'text'
     : activeToolMode === 'date' ? 'crosshair'
+    : activeToolMode === 'symbol' ? 'crosshair'
     : 'default';
 
   const ghostW = pendingSignatureSize ? pendingSignatureSize.width * scale : 0;

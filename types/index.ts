@@ -1,4 +1,6 @@
-export type ElementType = 'signature' | 'text' | 'date';
+export type ElementType = 'signature' | 'text' | 'date' | 'symbol';
+
+export type SymbolShape = 'check' | 'cross' | 'circle' | 'star';
 
 export interface Position {
   x: number;
@@ -41,7 +43,15 @@ export interface DateField extends BaseElement {
   format: string;
 }
 
-export type PdfElement = SignatureElement | TextField | DateField;
+export interface SymbolElement extends BaseElement {
+  type: 'symbol';
+  shape: SymbolShape;
+  color: string;
+  /** Stroke thickness as a ratio of min(width, height). Ignored for filled shapes (star). */
+  strokeWidth: number;
+}
+
+export type PdfElement = SignatureElement | TextField | DateField | SymbolElement;
 
 export interface PdfPage {
   index: number;

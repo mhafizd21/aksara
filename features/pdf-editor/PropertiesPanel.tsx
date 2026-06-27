@@ -2,10 +2,10 @@
 
 import { useState } from 'react';
 import { useStudioStore } from '@/stores/studio.store';
-import { Settings, Type, Calendar, PenLine, Trash2, ChevronLeft, ChevronRight, X, Layers } from 'lucide-react';
-import { FONT_FAMILIES, DATE_FORMATS } from '@/lib/constants';
+import { Settings, Type, Calendar, PenLine, Trash2, ChevronLeft, ChevronRight, X, Layers, Shapes } from 'lucide-react';
+import { FONT_FAMILIES, DATE_FORMATS, SYMBOL_SHAPES, SYMBOL_PRESET_COLORS } from '@/lib/constants';
 import { formatDate } from '@/lib/utils';
-import type { TextField, DateField, PdfElement } from '@/types';
+import type { TextField, DateField, SymbolElement, PdfElement } from '@/types';
 
 // Compute the axis-aligned bounding box center of an element after rotation.
 // CSS rotates around the element's own center, so the visual center == the unrotated center.
@@ -286,8 +286,8 @@ function PanelContent({ selected, updateElement, deleteElement }: {
   updateElement: ReturnType<typeof useStudioStore.getState>['updateElement'];
   deleteElement: ReturnType<typeof useStudioStore.getState>['deleteElement'];
 }) {
-  const ElementIcon = selected.type === 'text' ? Type : selected.type === 'date' ? Calendar : PenLine;
-  const elementLabel = selected.type === 'text' ? 'Text Field' : selected.type === 'date' ? 'Date Field' : 'Signature';
+  const ElementIcon = selected.type === 'text' ? Type : selected.type === 'date' ? Calendar : selected.type === 'symbol' ? Shapes : PenLine;
+  const elementLabel = selected.type === 'text' ? 'Text Field' : selected.type === 'date' ? 'Date Field' : selected.type === 'symbol' ? 'Symbol' : 'Signature';
 
   return (
     <>
@@ -344,6 +344,10 @@ function PanelContent({ selected, updateElement, deleteElement }: {
           </>
         )}
 
+        {selected.type === 'symbol' && (
+          <SymbolStyleSection element={selected as SymbolElement} onChange={(u) => updateElement(selected.id, u)} />
+        )}
+
         {selected.type === 'signature' && (
           <Section title="Preview">
             <div className="rounded-lg p-3" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
@@ -366,10 +370,10 @@ export function MobilePropertiesSheet() {
   if (!selectedId && !isMultiSelect) return null;
   if (!isMultiSelect && !selected) return null;
 
-  const ElementIcon = selected?.type === 'text' ? Type : selected?.type === 'date' ? Calendar : PenLine;
+  const ElementIcon = selected?.type === 'text' ? Type : selected?.type === 'date' ? Calendar : selected?.type === 'symbol' ? Shapes : PenLine;
   const elementLabel = isMultiSelect
     ? `${selectedIds.length} Elements`
-    : selected?.type === 'text' ? 'Text Field' : selected?.type === 'date' ? 'Date Field' : 'Signature';
+    : selected?.type === 'text' ? 'Text Field' : selected?.type === 'date' ? 'Date Field' : selected?.type === 'symbol' ? 'Symbol' : 'Signature';
 
   return (
     <>
@@ -450,6 +454,10 @@ export function MobilePropertiesSheet() {
                     </>
                   )}
 
+                  {selected.type === 'symbol' && (
+                    <SymbolStyleSection element={selected as SymbolElement} onChange={(u) => updateElement(selected.id, u)} />
+                  )}
+
                   {selected.type === 'signature' && (
                     <Section title="Preview">
                       <div className="rounded-lg p-3" style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
@@ -489,6 +497,55 @@ function NumberInput({ label, value, min, onChange }: {
         className="flex-1 min-w-0 bg-transparent focus:outline-none text-xs"
         style={{ color: 'var(--color-text-primary)' }} />
     </div>
+  );
+}
+
+function SymbolStyleSection({ element, onChange }: {
+  element: SymbolElement;
+  onChange: (u: Partial<SymbolElement>) => void;
+}) {
+  const SHAPE_ICONS: Record<(typeof SYMBOL_SHAPES)[number], string> = {
+    check: '✓', cross: '✕', circle: '○', star: '★',
+  };
+  return (
+    <Section title="Symbol">
+      <div className="space-y-2">
+        <div className="flex items-center gap-2">
+          <label className="text-xs w-10 shrink-0" style={{ color: 'var(--color-text-secondary)' }}>Shape</label>
+          <div className="flex-1 grid grid-cols-4 gap-1.5">
+            {SYMBOL_SHAPES.map((shape) => (
+              <button key={shape} type="button" onClick={() => onChange({ shape })}
+                className="flex items-center justify-center h-8 rounded-lg text-sm"
+                style={{
+                  background: element.shape === shape ? '#EEF2FF' : 'var(--color-surface)',
+                  border: element.shape === shape ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
+                  color: element.shape === shape ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                }}>
+                {SHAPE_ICONS[shape]}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-xs w-10 shrink-0" style={{ color: 'var(--color-text-secondary)' }}>Color</label>
+          <input type="color" value={element.color} onChange={(e) => onChange({ color: e.target.value })}
+            className="w-8 h-7 rounded cursor-pointer" style={{ border: '1px solid var(--color-border)' }} />
+          <div className="flex items-center gap-1 flex-wrap">
+            {SYMBOL_PRESET_COLORS.map((c) => (
+              <button key={c} type="button" onClick={() => onChange({ color: c })}
+                className="w-5 h-5 rounded-full shrink-0"
+                style={{ background: c, border: element.color === c ? '2px solid var(--color-primary)' : '1px solid var(--color-border)' }} />
+            ))}
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-xs w-10 shrink-0" style={{ color: 'var(--color-text-secondary)' }}>Thick</label>
+          <input type="range" min={0.06} max={0.35} step={0.01} value={element.strokeWidth}
+            onChange={(e) => onChange({ strokeWidth: Number(e.target.value) })}
+            className="flex-1" disabled={element.shape === 'star'} />
+        </div>
+      </div>
+    </Section>
   );
 }
 

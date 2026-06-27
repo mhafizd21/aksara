@@ -2,7 +2,7 @@
 
 import { useCallback } from 'react';
 import { useStudioStore } from '@/stores/studio.store';
-import type { PdfElement, SignatureElement, TextField, DateField } from '@/types';
+import type { PdfElement, SignatureElement, TextField, DateField, SymbolElement } from '@/types';
 
 function dataUrlToUint8Array(dataUrl: string): Uint8Array {
   const base64 = dataUrl.split(',')[1];
@@ -124,6 +124,57 @@ export function usePdfExport() {
             color: rgb(r, g, b),
             rotate: degrees(-rot),
           });
+
+        } else if (el.type === 'symbol') {
+          const symEl = el as SymbolElement;
+          const [r, g, b] = hexToRgb(symEl.color);
+          const color = rgb(r, g, b);
+          const minDim = Math.min(elW, elH);
+          const strokeW = Math.max(0.75, symEl.strokeWidth * minDim);
+          const rr = (rot * Math.PI) / 180;
+
+          // Transform a point given as a fraction of (elW, elH) — origin at element
+          // center, +x right, +y up — by the element's CSS rotation, into PDF page space.
+          const toWorld = (fx: number, fy: number) => {
+            const lx = fx * elW;
+            const ly = fy * elH;
+            return {
+              x: cx + (Math.cos(rr) * lx + Math.sin(rr) * ly),
+              y: cy + (-Math.sin(rr) * lx + Math.cos(rr) * ly),
+            };
+          };
+
+          if (symEl.shape === 'check') {
+            const p1 = toWorld(-0.30, -0.02);
+            const p2 = toWorld(-0.10, -0.22);
+            const p3 = toWorld(0.32, 0.22);
+            page.drawLine({ start: p1, end: p2, thickness: strokeW, color, lineCap: 1 });
+            page.drawLine({ start: p2, end: p3, thickness: strokeW, color, lineCap: 1 });
+          } else if (symEl.shape === 'cross') {
+            const p1 = toWorld(-0.28, 0.28);
+            const p2 = toWorld(0.28, -0.28);
+            const p3 = toWorld(0.28, 0.28);
+            const p4 = toWorld(-0.28, -0.28);
+            page.drawLine({ start: p1, end: p2, thickness: strokeW, color, lineCap: 1 });
+            page.drawLine({ start: p3, end: p4, thickness: strokeW, color, lineCap: 1 });
+          } else if (symEl.shape === 'circle') {
+            // Ellipses are rotationally symmetric when elW === elH; rotation is ignored
+            // here since pdf-lib's drawEllipse has no rotate option.
+            page.drawEllipse({
+              x: cx, y: cy,
+              xScale: (elW / 2) * 0.84, yScale: (elH / 2) * 0.84,
+              borderColor: color, borderWidth: strokeW,
+            });
+          } else if (symEl.shape === 'star') {
+            const starPath = 'M50 5 L61 38 L97 38 L67 59 L78 92 L50 71 L22 92 L33 59 L3 38 L39 38 Z';
+            const origin = getRotatedOrigin(cx, cy, elW, elH, rot);
+            page.drawSvgPath(starPath, {
+              x: origin.x, y: origin.y,
+              scale: Math.min(elW, elH) / 100,
+              color,
+              rotate: degrees(-rot),
+            });
+          }
         }
       };
 

@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
-import type { PdfElement, PdfDocument, SignatureMode } from '@/types';
+import type { PdfElement, PdfDocument, SignatureMode, SymbolShape } from '@/types';
 import { generateId } from '@/lib/utils';
-import { DEFAULT_TEXT_ELEMENT, DEFAULT_DATE_ELEMENT, DEFAULT_SCALE } from '@/lib/constants';
+import { DEFAULT_TEXT_ELEMENT, DEFAULT_DATE_ELEMENT, DEFAULT_SCALE, DEFAULT_SYMBOL_ELEMENT, SYMBOL_DEFAULT_COLOR } from '@/lib/constants';
 import { formatDate } from '@/lib/utils';
 
 interface HistoryEntry { elements: PdfElement[]; }
@@ -14,13 +14,15 @@ interface StudioState {
   elements: PdfElement[];
   selectedId: string | null;
   selectedIds: string[];
-  activeToolMode: 'select' | 'text' | 'date' | 'signature';
+  activeToolMode: 'select' | 'text' | 'date' | 'signature' | 'symbol';
   signatureMode: SignatureMode;
   isSignatureModalOpen: boolean;
   isExporting: boolean;
   downloadFileName: string;
   pendingSignatureDataUrl: string | null;
   pendingSignatureSize: { width: number; height: number } | null;
+  selectedSymbolShape: SymbolShape;
+  selectedSymbolColor: string;
   clipboard: PdfElement | null;
   lockedIds: Record<string, boolean>;
   history: HistoryEntry[];
@@ -44,6 +46,9 @@ interface StudioState {
   cancelSignaturePlacement: () => void;
   addTextField: (pageIndex: number, x?: number, y?: number) => void;
   addDateField: (pageIndex: number, x?: number, y?: number) => void;
+  setSelectedSymbolShape: (shape: SymbolShape) => void;
+  setSelectedSymbolColor: (color: string) => void;
+  addSymbolField: (pageIndex: number, x?: number, y?: number) => void;
   updateElement: (id: string, updates: Partial<PdfElement>) => void;
   updateSelectedElements: (updates: Partial<PdfElement>) => void;
   deleteElement: (id: string) => void;
@@ -77,6 +82,8 @@ export const useStudioStore = create<StudioState>()(
     downloadFileName: '',
     pendingSignatureDataUrl: null,
     pendingSignatureSize: null,
+    selectedSymbolShape: 'check',
+    selectedSymbolColor: SYMBOL_DEFAULT_COLOR.check,
     clipboard: null,
     lockedIds: {},
     history: [{ elements: [] }],
@@ -209,6 +216,30 @@ export const useStudioStore = create<StudioState>()(
         fontFamily: DEFAULT_DATE_ELEMENT.fontFamily,
         color: DEFAULT_DATE_ELEMENT.color,
         format: DEFAULT_DATE_ELEMENT.format,
+      };
+      set((s) => { s.elements.push(el); s.selectedId = el.id; s.selectedIds = [el.id]; s.activeToolMode = 'select'; });
+    },
+
+    setSelectedSymbolShape: (shape) => set((s) => {
+      s.selectedSymbolShape = shape;
+      s.selectedSymbolColor = SYMBOL_DEFAULT_COLOR[shape];
+    }),
+
+    setSelectedSymbolColor: (color) => set((s) => { s.selectedSymbolColor = color; }),
+
+    addSymbolField: (pageIndex, x, y) => {
+      get().pushHistory();
+      const { selectedSymbolShape, selectedSymbolColor } = get();
+      const el: PdfElement = {
+        id: generateId(), type: 'symbol', pageIndex,
+        shape: selectedSymbolShape,
+        color: selectedSymbolColor,
+        strokeWidth: DEFAULT_SYMBOL_ELEMENT.strokeWidth,
+        position: {
+          x: x !== undefined ? Math.max(0, x - DEFAULT_SYMBOL_ELEMENT.width / 2) : 100,
+          y: y !== undefined ? Math.max(0, y - DEFAULT_SYMBOL_ELEMENT.height / 2) : 200,
+        },
+        size: { width: DEFAULT_SYMBOL_ELEMENT.width, height: DEFAULT_SYMBOL_ELEMENT.height },
       };
       set((s) => { s.elements.push(el); s.selectedId = el.id; s.selectedIds = [el.id]; s.activeToolMode = 'select'; });
     },

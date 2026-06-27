@@ -43,3 +43,20 @@ export const DEFAULT_SIGNATURE_ELEMENT = {
   width: 200,
   height: 80,
 };
+
+export const SYMBOL_SHAPES = ['check', 'cross', 'circle', 'star'] as const;
+
+export const SYMBOL_DEFAULT_COLOR: Record<(typeof SYMBOL_SHAPES)[number], string> = {
+  check: '#16A34A',
+  cross: '#DC2626',
+  circle: '#2563EB',
+  star: '#F59E0B',
+};
+
+export const SYMBOL_PRESET_COLORS = ['#16A34A', '#DC2626', '#2563EB', '#F59E0B', '#7C3AED', '#000000'];
+
+export const DEFAULT_SYMBOL_ELEMENT = {
+  width: 50,
+  height: 50,
+  strokeWidth: 0.18,
+};
