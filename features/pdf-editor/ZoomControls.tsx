@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { ZoomIn, ZoomOut, Maximize } from 'lucide-react';
 import { useStudioStore } from '@/stores/studio.store';
 import { MIN_SCALE, MAX_SCALE, SCALE_STEP, DEFAULT_SCALE } from '@/lib/constants';
@@ -9,6 +9,8 @@ import { clampValue } from '@/lib/utils';
 export function ZoomControls() {
   const { scale, setScale } = useStudioStore();
   const [presetOpen, setPresetOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const collapseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const zoom = (delta: number) => {
     setScale(clampValue(Math.round((scale + delta) * 100) / 100, MIN_SCALE, MAX_SCALE));
@@ -16,6 +18,18 @@ export function ZoomControls() {
 
   const percent = Math.round(scale * 100);
   const presets = [50, 75, 100, 125, 150, 200];
+
+  // Auto-collapse after 3s of inactivity
+  const resetCollapseTimer = () => {
+    if (collapseTimer.current) clearTimeout(collapseTimer.current);
+    setCollapsed(false);
+    collapseTimer.current = setTimeout(() => setCollapsed(true), 3000);
+  };
+
+  const handleZoom = (delta: number) => {
+    zoom(delta);
+    resetCollapseTimer();
+  };
 
   const iconBtn = (disabled: boolean): React.CSSProperties => ({
     display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -78,114 +92,137 @@ export function ZoomControls() {
         </button>
       </footer>
 
-      {/* ── MOBILE floating zoom pill ──
-          Sits above the bottom action bar (bottom-[128px]).
-          Right-aligned so it doesn't block the PDF center.
-          Compact: −  75%  +  with tap-friendly 44px targets.
+      {/* ── MOBILE zoom pill ──
+          Centered horizontally above the bottom bar.
+          Auto-collapses to just the percent badge after 3s idle.
+          Tap the badge to re-expand or open preset picker.
       ── */}
       <div
-        className="md:hidden fixed right-3 z-40 flex items-center gap-0.5 px-1 py-1 rounded-2xl"
+        className="md:hidden fixed left-1/2 -translate-x-1/2 z-40"
         style={{
-          bottom: 'calc(128px + env(safe-area-inset-bottom))',
-          background: 'var(--color-background)',
-          border: '1px solid var(--color-border)',
-          boxShadow: '0 2px 16px rgba(0,0,0,0.12)',
+          bottom: 'calc(124px + env(safe-area-inset-bottom))',
+          pointerEvents: 'none',
         }}
       >
-        {/* Zoom out */}
-        <button
-          onClick={() => zoom(-SCALE_STEP)}
-          disabled={scale <= MIN_SCALE}
-          className="flex items-center justify-center rounded-xl transition-colors active:scale-90"
+        <div
+          className="flex items-center transition-all duration-300"
           style={{
-            width: 40, height: 40,
-            color: scale <= MIN_SCALE ? 'var(--color-text-disabled)' : 'var(--color-text-secondary)',
-            cursor: scale <= MIN_SCALE ? 'not-allowed' : 'pointer',
-            WebkitTapHighlightColor: 'transparent',
+            pointerEvents: 'auto',
+            background: 'var(--color-background)',
+            border: '1px solid var(--color-border)',
+            borderRadius: 999,
+            boxShadow: '0 2px 12px rgba(0,0,0,0.10)',
+            opacity: collapsed ? 0.6 : 1,
+            overflow: 'hidden',
           }}
         >
-          <ZoomOut className="w-4 h-4" />
-        </button>
+          {/* Zoom out — hidden when collapsed */}
+          {!collapsed && (
+            <button
+              onClick={() => handleZoom(-SCALE_STEP)}
+              disabled={scale <= MIN_SCALE}
+              className="flex items-center justify-center active:scale-90 transition-all"
+              style={{
+                width: 40, height: 40,
+                color: scale <= MIN_SCALE ? 'var(--color-text-disabled)' : 'var(--color-text-secondary)',
+                cursor: scale <= MIN_SCALE ? 'not-allowed' : 'pointer',
+                WebkitTapHighlightColor: 'transparent',
+              }}
+            >
+              <ZoomOut className="w-4 h-4" />
+            </button>
+          )}
 
-        {/* Percent display — tap to open preset picker */}
-        <div className="relative">
-          <button
-            onClick={() => setPresetOpen((v) => !v)}
-            className="flex items-center justify-center rounded-lg px-1 active:scale-95"
-            style={{
-              minWidth: 44, height: 40, fontSize: 12, fontWeight: 700,
-              color: 'var(--color-text-primary)',
-              WebkitTapHighlightColor: 'transparent',
-            }}
-          >
-            {percent}%
-          </button>
+          {/* Percent badge — always visible, tap to expand or open presets */}
+          <div className="relative">
+            <button
+              onClick={() => {
+                if (collapsed) {
+                  resetCollapseTimer();
+                } else {
+                  setPresetOpen((v) => !v);
+                  resetCollapseTimer();
+                }
+              }}
+              className="flex items-center justify-center active:scale-95 transition-all"
+              style={{
+                minWidth: collapsed ? 52 : 44, height: 40,
+                paddingLeft: collapsed ? 14 : 0,
+                paddingRight: collapsed ? 14 : 0,
+                fontSize: 12, fontWeight: 700,
+                color: 'var(--color-text-primary)',
+                WebkitTapHighlightColor: 'transparent',
+              }}
+            >
+              {percent}%
+            </button>
 
-          {/* Preset picker — pops up above */}
-          {presetOpen && (
-            <>
-              <div className="fixed inset-0 z-40" onClick={() => setPresetOpen(false)} />
-              <div
-                className="absolute bottom-full right-0 mb-2 z-50 overflow-hidden rounded-xl"
-                style={{
-                  background: 'var(--color-background)',
-                  border: '1px solid var(--color-border)',
-                  boxShadow: '0 8px 32px rgba(0,0,0,0.14)',
-                  minWidth: 80,
-                }}
-              >
-                {presets.map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => { setScale(p / 100); setPresetOpen(false); }}
-                    className="w-full px-4 active:scale-95"
-                    style={{
-                      height: 44,
-                      fontSize: 13,
-                      fontWeight: percent === p ? 700 : 400,
-                      color: percent === p ? 'var(--color-primary)' : 'var(--color-text-primary)',
-                      background: percent === p ? '#EEF2FF' : 'transparent',
-                      textAlign: 'center',
-                      WebkitTapHighlightColor: 'transparent',
-                    }}
-                  >
-                    {p}%
-                  </button>
-                ))}
-                {/* Reset */}
-                <div style={{ borderTop: '1px solid var(--color-border)' }}>
-                  <button
-                    onClick={() => { setScale(DEFAULT_SCALE); setPresetOpen(false); }}
-                    className="w-full px-4 flex items-center justify-center gap-1.5"
-                    style={{
-                      height: 44, fontSize: 12,
-                      color: 'var(--color-text-secondary)',
-                      WebkitTapHighlightColor: 'transparent',
-                    }}
-                  >
-                    <Maximize className="w-3.5 h-3.5" />
-                    Reset
-                  </button>
+            {/* Preset picker — pops up above */}
+            {presetOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setPresetOpen(false)} />
+                <div
+                  className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-50 overflow-hidden rounded-xl"
+                  style={{
+                    background: 'var(--color-background)',
+                    border: '1px solid var(--color-border)',
+                    boxShadow: '0 8px 32px rgba(0,0,0,0.14)',
+                    minWidth: 80,
+                  }}
+                >
+                  {presets.map((p) => (
+                    <button
+                      key={p}
+                      onClick={() => { setScale(p / 100); setPresetOpen(false); setCollapsed(false); }}
+                      className="w-full px-4 active:scale-95"
+                      style={{
+                        height: 44, fontSize: 13,
+                        fontWeight: percent === p ? 700 : 400,
+                        color: percent === p ? 'var(--color-primary)' : 'var(--color-text-primary)',
+                        background: percent === p ? '#EEF2FF' : 'transparent',
+                        textAlign: 'center',
+                        WebkitTapHighlightColor: 'transparent',
+                      }}
+                    >
+                      {p}%
+                    </button>
+                  ))}
+                  <div style={{ borderTop: '1px solid var(--color-border)' }}>
+                    <button
+                      onClick={() => { setScale(DEFAULT_SCALE); setPresetOpen(false); setCollapsed(false); }}
+                      className="w-full px-4 flex items-center justify-center gap-1.5"
+                      style={{
+                        height: 44, fontSize: 12,
+                        color: 'var(--color-text-secondary)',
+                        WebkitTapHighlightColor: 'transparent',
+                      }}
+                    >
+                      <Maximize className="w-3.5 h-3.5" />
+                      Reset
+                    </button>
+                  </div>
                 </div>
-              </div>
-            </>
+              </>
+            )}
+          </div>
+
+          {/* Zoom in — hidden when collapsed */}
+          {!collapsed && (
+            <button
+              onClick={() => handleZoom(SCALE_STEP)}
+              disabled={scale >= MAX_SCALE}
+              className="flex items-center justify-center active:scale-90 transition-all"
+              style={{
+                width: 40, height: 40,
+                color: scale >= MAX_SCALE ? 'var(--color-text-disabled)' : 'var(--color-text-secondary)',
+                cursor: scale >= MAX_SCALE ? 'not-allowed' : 'pointer',
+                WebkitTapHighlightColor: 'transparent',
+              }}
+            >
+              <ZoomIn className="w-4 h-4" />
+            </button>
           )}
         </div>
-
-        {/* Zoom in */}
-        <button
-          onClick={() => zoom(SCALE_STEP)}
-          disabled={scale >= MAX_SCALE}
-          className="flex items-center justify-center rounded-xl transition-colors active:scale-90"
-          style={{
-            width: 40, height: 40,
-            color: scale >= MAX_SCALE ? 'var(--color-text-disabled)' : 'var(--color-text-secondary)',
-            cursor: scale >= MAX_SCALE ? 'not-allowed' : 'pointer',
-            WebkitTapHighlightColor: 'transparent',
-          }}
-        >
-          <ZoomIn className="w-4 h-4" />
-        </button>
       </div>
     </>
   );

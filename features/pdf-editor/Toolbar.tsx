@@ -190,6 +190,15 @@ export function Toolbar() {
 
         {error && <span className="text-xs truncate max-w-[120px] hidden lg:block" style={{ color: 'var(--color-danger)' }}>{error}</span>}
 
+        {/* Mobile Undo/Redo — in header, right side */}
+        {pdfDoc && (
+          <div className="flex md:hidden items-center gap-1">
+            <ToolBtn icon={Undo2} label="Undo" disabled={!canUndo} onClick={undo} iconOnly />
+            <ToolBtn icon={Redo2} label="Redo" disabled={!canRedo} onClick={redo} iconOnly />
+            <div className="w-px h-5 shrink-0 mx-1" style={{ background: 'var(--color-border)' }} />
+          </div>
+        )}
+
         {/* Desktop filename editor */}
         {pdfDoc && (
           <div className="hidden sm:flex items-center gap-1.5 mr-1">
@@ -216,7 +225,7 @@ export function Toolbar() {
 
         <div className="w-px h-5 shrink-0 hidden sm:block" style={{ background: 'var(--color-border)' }} />
 
-        {/* Download button */}
+        {/* Download button — visible on all screen sizes */}
         <button onClick={exportPdf} disabled={!pdfDoc || isExporting}
           className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all shrink-0"
           style={!pdfDoc || isExporting
@@ -225,7 +234,7 @@ export function Toolbar() {
           onMouseEnter={(e) => { if (pdfDoc && !isExporting) (e.currentTarget as HTMLElement).style.background = 'var(--color-primary-hover)'; }}
           onMouseLeave={(e) => { if (pdfDoc && !isExporting) (e.currentTarget as HTMLElement).style.background = 'var(--color-primary)'; }}>
           {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-          <span className="hidden sm:inline">{isExporting ? 'Menyimpan…' : 'Unduh'}</span>
+          <span>{isExporting ? 'Menyimpan…' : 'Unduh'}</span>
         </button>
       </header>
 
@@ -234,10 +243,7 @@ export function Toolbar() {
         pdfDoc={pdfDoc}
         isPlacing={isPlacing}
         activeToolMode={activeToolMode}
-        canUndo={canUndo}
-        canRedo={canRedo}
         currentPage={currentPage}
-        isExporting={isExporting}
         loading={loading}
         selectedSymbolShape={selectedSymbolShape}
         selectedSymbolStrokeColor={selectedSymbolStrokeColor}
@@ -249,11 +255,8 @@ export function Toolbar() {
         onToggleSymbolPicker={() => setMobileSymbolPickerOpen((v) => !v)}
         onCloseSymbolPicker={() => setMobileSymbolPickerOpen(false)}
         onSetStrokeColor={setSelectedSymbolStrokeColor}
-        onUndo={undo}
-        onRedo={redo}
         onPrevPage={() => setCurrentPage(currentPage - 1)}
         onNextPage={() => setCurrentPage(currentPage + 1)}
-        onExport={exportPdf}
         onCancelPlacement={cancelSignaturePlacement}
       />
     </>
@@ -263,18 +266,16 @@ export function Toolbar() {
 /* ─────────────────────────────────────────────
    MOBILE BOTTOM ACTION BAR
    Fixed bottom bar with thumb-friendly big tap targets.
-   Layout (5 slots):
-     Upload | Teks | Tanda Tangan | Simbol | Unduh
-   + secondary row for Undo/Redo/PageNav when PDF loaded
+   Primary row (5 slots, symmetric):
+     Upload | Teks | [Tanda Tangan CTA] | Tanggal | Simbol
+   Secondary row (pagination only):
+     ← | Page X / N | →
 ───────────────────────────────────────────── */
 interface MobileBottomBarProps {
   pdfDoc: import('@/types').PdfDocument | null;
   isPlacing: boolean;
   activeToolMode: string;
-  canUndo: boolean;
-  canRedo: boolean;
   currentPage: number;
-  isExporting: boolean;
   loading: boolean;
   selectedSymbolShape: SymbolShape;
   selectedSymbolStrokeColor: string;
@@ -286,21 +287,16 @@ interface MobileBottomBarProps {
   onToggleSymbolPicker: () => void;
   onCloseSymbolPicker: () => void;
   onSetStrokeColor: (color: string) => void;
-  onUndo: () => void;
-  onRedo: () => void;
   onPrevPage: () => void;
   onNextPage: () => void;
-  onExport: () => void;
   onCancelPlacement: () => void;
 }
 
 function MobileBottomBar({
-  pdfDoc, isPlacing, activeToolMode, canUndo, canRedo,
-  currentPage, isExporting, loading, selectedSymbolShape,
-  selectedSymbolStrokeColor, mobileSymbolPickerOpen, SYMBOL_ICONS,
+  pdfDoc, isPlacing, activeToolMode, currentPage, loading,
+  selectedSymbolShape, selectedSymbolStrokeColor, mobileSymbolPickerOpen, SYMBOL_ICONS,
   onUpload, onToolClick, onPickSymbol, onToggleSymbolPicker,
-  onCloseSymbolPicker, onSetStrokeColor, onUndo, onRedo,
-  onPrevPage, onNextPage, onExport, onCancelPlacement,
+  onCloseSymbolPicker, onSetStrokeColor, onPrevPage, onNextPage, onCancelPlacement,
 }: MobileBottomBarProps) {
 
   const UploadIcon = loading ? Loader2 : Upload;
@@ -375,43 +371,35 @@ function MobileBottomBar({
         </>
       )}
 
-      {/* Secondary row: Undo / Page nav / Redo — only when PDF loaded */}
+      {/* Pagination row — only when PDF loaded */}
       {pdfDoc && !isPlacing && (
-        <div className="flex items-center justify-between px-4 py-1.5"
-          style={{ borderBottom: '1px solid var(--color-border)' }}>
-          {/* Undo / Redo */}
-          <div className="flex items-center gap-1">
-            <MiniBtn icon={Undo2} label="Undo" disabled={!canUndo} onClick={onUndo} />
-            <MiniBtn icon={Redo2} label="Redo" disabled={!canRedo} onClick={onRedo} />
-          </div>
-
-          {/* Page navigation */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={onPrevPage}
-              disabled={currentPage === 0}
-              className="w-7 h-7 flex items-center justify-center rounded-lg disabled:opacity-30"
-              style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
-              <ChevronLeft className="w-4 h-4" style={{ color: 'var(--color-text-primary)' }} />
-            </button>
-            <span className="text-xs font-medium tabular-nums" style={{ color: 'var(--color-text-primary)', minWidth: 48, textAlign: 'center' }}>
-              {currentPage + 1} / {pdfDoc.numPages}
-            </span>
-            <button
-              onClick={onNextPage}
-              disabled={currentPage === pdfDoc.numPages - 1}
-              className="w-7 h-7 flex items-center justify-center rounded-lg disabled:opacity-30"
-              style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
-              <ChevronRight className="w-4 h-4" style={{ color: 'var(--color-text-primary)' }} />
-            </button>
-          </div>
-
-          {/* Placeholder to balance flex */}
-          <div style={{ width: 72 }} />
+        <div
+          className="flex items-center justify-center gap-3 px-4 py-2"
+          style={{ borderBottom: '1px solid var(--color-border)' }}
+        >
+          <button
+            onClick={onPrevPage}
+            disabled={currentPage === 0}
+            className="w-8 h-8 flex items-center justify-center rounded-lg disabled:opacity-30 active:scale-90 transition-all"
+            style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', WebkitTapHighlightColor: 'transparent' }}
+          >
+            <ChevronLeft className="w-4 h-4" style={{ color: 'var(--color-text-primary)' }} />
+          </button>
+          <span className="text-xs font-semibold tabular-nums" style={{ color: 'var(--color-text-primary)', minWidth: 64, textAlign: 'center' }}>
+            {currentPage + 1} / {pdfDoc.numPages}
+          </span>
+          <button
+            onClick={onNextPage}
+            disabled={currentPage === pdfDoc.numPages - 1}
+            className="w-8 h-8 flex items-center justify-center rounded-lg disabled:opacity-30 active:scale-90 transition-all"
+            style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', WebkitTapHighlightColor: 'transparent' }}
+          >
+            <ChevronRight className="w-4 h-4" style={{ color: 'var(--color-text-primary)' }} />
+          </button>
         </div>
       )}
 
-      {/* Primary action row */}
+      {/* Primary action row — 5 symmetric slots */}
       <div className="flex items-center justify-around px-2 py-1">
         {/* Upload */}
         <BottomAction
@@ -430,7 +418,7 @@ function MobileBottomBar({
           disabled={!pdfDoc}
         />
 
-        {/* Signature — primary CTA, larger */}
+        {/* Signature — primary CTA, center */}
         <BottomAction
           icon={PenLine}
           label="Tanda Tangan"
@@ -457,16 +445,6 @@ function MobileBottomBar({
           active={activeToolMode === 'symbol' || mobileSymbolPickerOpen}
           disabled={!pdfDoc}
         />
-
-        {/* Download */}
-        <BottomAction
-          icon={isExporting ? Loader2 : Download}
-          label={isExporting ? 'Menyimpan…' : 'Unduh'}
-          onClick={onExport}
-          disabled={!pdfDoc || isExporting}
-          loading={isExporting}
-          isDownload
-        />
       </div>
     </div>
   );
@@ -481,10 +459,9 @@ interface BottomActionProps {
   disabled?: boolean;
   loading?: boolean;
   isPrimary?: boolean;
-  isDownload?: boolean;
 }
 
-function BottomAction({ icon: Icon, label, onClick, active, disabled, loading, isPrimary, isDownload }: BottomActionProps) {
+function BottomAction({ icon: Icon, label, onClick, active, disabled, loading, isPrimary }: BottomActionProps) {
   const getStyle = (): React.CSSProperties => {
     if (isPrimary) {
       return {
@@ -495,13 +472,6 @@ function BottomAction({ icon: Icon, label, onClick, active, disabled, loading, i
         height: 56,
         boxShadow: '0 4px 16px rgba(67,56,202,0.35)',
         marginTop: -8,
-      };
-    }
-    if (isDownload) {
-      return {
-        background: disabled ? 'var(--color-surface)' : '#EEF2FF',
-        color: disabled ? 'var(--color-text-disabled)' : 'var(--color-primary)',
-        borderRadius: 12,
       };
     }
     if (active) {
@@ -539,31 +509,6 @@ function BottomAction({ icon: Icon, label, onClick, active, disabled, loading, i
           {label}
         </span>
       )}
-    </button>
-  );
-}
-
-/* ─── MiniBtn: compact secondary action ─── */
-function MiniBtn({ icon: Icon, label, disabled, onClick }: {
-  icon: React.ComponentType<{ className?: string }>; label: string;
-  disabled?: boolean; onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      title={label}
-      className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium transition-all"
-      style={{
-        background: 'var(--color-surface)',
-        color: disabled ? 'var(--color-text-disabled)' : 'var(--color-text-primary)',
-        border: '1px solid var(--color-border)',
-        opacity: disabled ? 0.4 : 1,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        WebkitTapHighlightColor: 'transparent',
-      }}>
-      <Icon className="w-3.5 h-3.5" />
-      <span>{label}</span>
     </button>
   );
 }

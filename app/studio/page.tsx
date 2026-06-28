@@ -23,11 +23,10 @@ export default function StudioPage() {
       <div className="flex flex-1 overflow-hidden">
         <ThumbnailSidebar />
         {/*
-          Mobile: bottom padding = height of bottom action bar (primary ~64px +
-          secondary ~40px) + some breathing room = ~120px.
+          Mobile: bottom padding = primary bar (~72px) + pagination row (~44px) + breathing room = ~124px.
           Desktop: no extra padding needed (md:pb-0).
         */}
-        <main className="flex flex-1 flex-col overflow-hidden pb-[120px] md:pb-0">
+        <main className="flex flex-1 flex-col overflow-hidden pb-[124px] md:pb-0">
           {pdfDoc ? <PdfCanvas /> : <UploadDropZone />}
           {/* ZoomControls renders a desktop footer + mobile floating pill */}
           <ZoomControls />

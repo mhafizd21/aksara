@@ -18,7 +18,8 @@ export function UploadDropZone() {
   }, [loadPdf, setDocument]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault(); setIsDragging(false);
+    e.preventDefault();
+    setIsDragging(false);
     const file = e.dataTransfer.files[0];
     if (file) handleFile(file);
   }, [handleFile]);
@@ -35,7 +36,6 @@ export function UploadDropZone() {
       className="flex-1 flex items-center justify-center"
       style={{ background: 'var(--color-surface)', padding: 'clamp(16px, 5vw, 48px)' }}
     >
-      {/* Hidden file input */}
       <input
         ref={inputRef}
         type="file"
@@ -44,71 +44,74 @@ export function UploadDropZone() {
         onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
       />
 
-      <div
-        className="w-full flex flex-col items-center text-center"
-        style={{ maxWidth: 420 }}
-      >
-        {/* ── Icon ── */}
-        <div
-          className="flex items-center justify-center rounded-2xl mb-5 transition-all"
-          style={{
-            width: 'clamp(64px, 18vw, 80px)',
-            height: 'clamp(64px, 18vw, 80px)',
-            background: isDragging ? '#EEF2FF' : 'var(--color-background)',
-            border: `1.5px solid ${isDragging ? '#C7D2FE' : 'var(--color-border)'}`,
-          }}
-        >
-          {isDragging
-            ? <Upload className="w-8 h-8" style={{ color: 'var(--color-primary)' }} />
-            : <FileText className="w-8 h-8" style={{ color: 'var(--color-text-secondary)' }} />}
-        </div>
-
-        {/* ── Heading ── */}
-        <p
-          className="font-semibold mb-1"
-          style={{
-            fontSize: 'clamp(16px, 4.5vw, 20px)',
-            color: 'var(--color-text-primary)',
-          }}
-        >
-          {isDragging ? 'Lepaskan PDF di sini' : 'Mulai dengan upload PDF'}
-        </p>
-        <p
-          className="mb-6 hidden sm:block"
-          style={{ fontSize: 13, color: 'var(--color-text-secondary)' }}
-        >
-          Drag &amp; drop atau klik untuk memilih file
-        </p>
-
-        {/* ── CTA Button (mobile-first: large tap target) ── */}
+      <div className="w-full flex flex-col items-center text-center" style={{ maxWidth: 380 }}>
+        {/* Unified drop zone + click target */}
         <button
           onClick={() => inputRef.current?.click()}
           onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
           onDragLeave={() => setIsDragging(false)}
           onDrop={handleDrop}
-          className="flex items-center justify-center gap-2 w-full rounded-2xl font-semibold transition-all active:scale-95 mb-4"
+          className="w-full flex flex-col items-center rounded-2xl transition-all active:scale-[0.98] mb-4"
           style={{
-            height: 'clamp(52px, 14vw, 60px)',
-            fontSize: 'clamp(15px, 4vw, 17px)',
-            background: 'var(--color-primary)',
-            color: '#fff',
-            boxShadow: '0 4px 20px rgba(67,56,202,0.30)',
-            maxWidth: 360,
-            WebkitTapHighlightColor: 'transparent',
-            border: 'none',
+            padding: 'clamp(24px, 6vw, 36px) 24px',
+            border: `1.5px dashed ${isDragging ? 'var(--color-primary)' : 'var(--color-border)'}`,
+            background: isDragging ? '#EEF2FF' : 'var(--color-background)',
             cursor: 'pointer',
+            WebkitTapHighlightColor: 'transparent',
+            outline: 'none',
+          }}
+          onMouseEnter={(e) => {
+            if (!isDragging) (e.currentTarget as HTMLElement).style.borderColor = 'var(--color-primary)';
+            if (!isDragging) (e.currentTarget as HTMLElement).style.background = '#F5F7FF';
+          }}
+          onMouseLeave={(e) => {
+            if (!isDragging) (e.currentTarget as HTMLElement).style.borderColor = 'var(--color-border)';
+            if (!isDragging) (e.currentTarget as HTMLElement).style.background = 'var(--color-background)';
           }}
         >
-          <Upload className="w-5 h-5" />
-          Pilih File PDF
+          {/* Icon */}
+          <div
+            className="flex items-center justify-center rounded-xl mb-3 transition-all"
+            style={{
+              width: 48, height: 48,
+              background: isDragging ? '#C7D2FE' : 'var(--color-surface)',
+              border: `1px solid ${isDragging ? '#A5B4FC' : 'var(--color-border)'}`,
+            }}
+          >
+            {isDragging
+              ? <Upload className="w-5 h-5" style={{ color: 'var(--color-primary)' }} />
+              : <FileText className="w-5 h-5" style={{ color: 'var(--color-text-secondary)' }} />}
+          </div>
+
+          {/* Text */}
+          <p className="font-semibold mb-1" style={{ fontSize: 15, color: 'var(--color-text-primary)' }}>
+            {isDragging ? 'Lepaskan di sini' : 'Pilih atau drop file PDF'}
+          </p>
+          <p style={{ fontSize: 12, color: 'var(--color-text-secondary)', marginBottom: 14 }}
+            className="hidden sm:block">
+            {isDragging ? '' : 'Klik area ini atau drag & drop'}
+          </p>
+
+          {/* Inline CTA pill */}
+          <span
+            className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg font-medium"
+            style={{
+              fontSize: 13,
+              background: isDragging ? 'var(--color-primary)' : 'var(--color-primary)',
+              color: '#fff',
+              boxShadow: '0 2px 8px rgba(67,56,202,0.20)',
+            }}
+          >
+            <Upload className="w-3.5 h-3.5" />
+            {isDragging ? 'Lepaskan' : 'Upload PDF'}
+          </span>
+
+          <p style={{ fontSize: 11, color: 'var(--color-text-disabled)', marginTop: 10 }}>
+            Maks. 50MB
+          </p>
         </button>
 
-        {/* ── Size hint ── */}
-        <p style={{ fontSize: 11, color: 'var(--color-text-disabled)', marginBottom: 24 }}>
-          Mendukung file PDF hingga 50MB
-        </p>
-
-        {/* ── Feature chips ── */}
+        {/* Feature chips */}
         <div className="flex flex-wrap justify-center gap-2">
           {features.map(({ icon: Icon, label }) => (
             <span
