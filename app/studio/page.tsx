@@ -22,7 +22,12 @@ export default function StudioPage() {
       <Toolbar />
       <div className="flex flex-1 overflow-hidden">
         <ThumbnailSidebar />
-        <main className="flex flex-1 flex-col overflow-hidden">
+        {/*
+          On mobile: add bottom padding so the fixed bottom action bar
+          (≈ 120px: ~56px primary row + ~32px secondary row + safe area)
+          doesn't overlap the canvas / zoom controls.
+        */}
+        <main className="flex flex-1 flex-col overflow-hidden pb-[120px] md:pb-0">
           {pdfDoc ? <PdfCanvas /> : <UploadDropZone />}
           <ZoomControls />
         </main>
