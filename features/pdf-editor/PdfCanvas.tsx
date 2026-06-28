@@ -379,7 +379,7 @@ export function PdfCanvas() {
       )}
 
       {/* Canvas wrapper */}
-      <div ref={wrapperRef} className="flex-1 overflow-auto flex items-start justify-center w-full p-3 sm:p-8">
+      <div ref={wrapperRef} className="flex-1 overflow-auto flex items-start w-full p-3 sm:p-8">
         {isPlacingGhost && (
           <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium pointer-events-none"
             style={{ background: 'var(--color-primary)', color: '#fff', boxShadow: 'var(--shadow-md)' }}>
@@ -405,7 +405,7 @@ export function PdfCanvas() {
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
-          className="relative select-none inline-block"
+          className="relative select-none inline-block mx-auto"
           style={{
             cursor,
             background: '#fff',
