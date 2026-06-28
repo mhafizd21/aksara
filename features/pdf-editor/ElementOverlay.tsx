@@ -2,12 +2,28 @@
 
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { Trash2, Copy, Scissors, Clipboard, GripHorizontal, Lock, Unlock, RotateCw } from 'lucide-react';
-import type { PdfElement } from '@/types';
+import type { PdfElement, SymbolElement } from '@/types';
 import { useStudioStore } from '@/stores/studio.store';
 
 interface ElementOverlayProps { element: PdfElement; scale: number; }
 type ResizeHandle = 'se' | 'sw' | 'ne' | 'nw' | 'e' | 'w' | 'n' | 's';
 const MIN_SIZE = 1;
+
+function getStrokeDash(style: 'solid' | 'dashed' | 'dotted', strokeWidthPx: number): string | undefined {
+  if (style === 'dashed') return `${strokeWidthPx * 2.4} ${strokeWidthPx * 1.6}`;
+  if (style === 'dotted') return `${strokeWidthPx * 0.01} ${strokeWidthPx * 1.6}`;
+  return undefined;
+}
+
+// 5-point star, normalized to a 0–1 box (fraction of width/height).
+const STAR_POINTS_FRAC: [number, number][] = [
+  [0.50, 0.05], [0.61, 0.38], [0.97, 0.38], [0.67, 0.59], [0.78, 0.92],
+  [0.50, 0.71], [0.22, 0.92], [0.33, 0.59], [0.03, 0.38], [0.39, 0.38],
+];
+
+function starPath(w: number, h: number): string {
+  return STAR_POINTS_FRAC.map(([fx, fy], i) => `${i === 0 ? 'M' : 'L'}${fx * w} ${fy * h}`).join(' ') + ' Z';
+}
 
 function getClient(e: MouseEvent | TouchEvent): { clientX: number; clientY: number } {
   if ('touches' in e && e.touches.length > 0)
@@ -15,6 +31,61 @@ function getClient(e: MouseEvent | TouchEvent): { clientX: number; clientY: numb
   if ('changedTouches' in e && (e as TouchEvent).changedTouches.length > 0)
     return { clientX: (e as TouchEvent).changedTouches[0].clientX, clientY: (e as TouchEvent).changedTouches[0].clientY };
   return { clientX: (e as MouseEvent).clientX, clientY: (e as MouseEvent).clientY };
+}
+
+export function SymbolGraphic({ shape, strokeColor, fillColor, hasFill, hasStroke, strokeStyle, strokeWidth, width: w, height: h }: {
+  shape: SymbolElement['shape'];
+  strokeColor: string;
+  fillColor: string;
+  hasFill: boolean;
+  hasStroke: boolean;
+  strokeStyle: SymbolElement['strokeStyle'];
+  strokeWidth: number;
+  width: number;
+  height: number;
+}) {
+  const strokeWPx = Math.max(0.5, strokeWidth * Math.min(w, h));
+  const dash = getStrokeDash(strokeStyle, strokeWPx);
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-full pointer-events-none select-none" style={{ display: 'block', overflow: 'visible' }}>
+      {shape === 'check' && (
+        <path d={`M${0.20 * w} ${0.52 * h} L${0.40 * w} ${0.72 * h} L${0.82 * w} ${0.28 * h}`}
+          fill="none" stroke={strokeColor} strokeWidth={strokeWPx}
+          strokeDasharray={dash} strokeLinecap="round" strokeLinejoin="round" />
+      )}
+      {shape === 'cross' && (
+        <path d={`M${0.22 * w} ${0.22 * h} L${0.78 * w} ${0.78 * h} M${0.78 * w} ${0.22 * h} L${0.22 * w} ${0.78 * h}`}
+          fill="none" stroke={strokeColor} strokeWidth={strokeWPx}
+          strokeDasharray={dash} strokeLinecap="round" />
+      )}
+      {shape === 'circle' && (
+        <ellipse cx={w / 2} cy={h / 2} rx={Math.max(0, w / 2 - strokeWPx / 2)} ry={Math.max(0, h / 2 - strokeWPx / 2)}
+          fill={hasFill ? fillColor : 'none'}
+          stroke={hasStroke ? strokeColor : 'none'}
+          strokeWidth={strokeWPx} strokeDasharray={dash} />
+      )}
+      {shape === 'rectangle' && (
+        <rect x={strokeWPx / 2} y={strokeWPx / 2}
+          width={Math.max(0, w - strokeWPx)} height={Math.max(0, h - strokeWPx)}
+          rx={Math.min(8, Math.min(w, h) * 0.08)}
+          fill={hasFill ? fillColor : 'none'}
+          stroke={hasStroke ? strokeColor : 'none'}
+          strokeWidth={strokeWPx} strokeDasharray={dash} />
+      )}
+      {shape === 'line' && (
+        <line x1={strokeWPx / 2} y1={h / 2} x2={Math.max(strokeWPx / 2, w - strokeWPx / 2)} y2={h / 2}
+          stroke={strokeColor} strokeWidth={strokeWPx}
+          strokeDasharray={dash} strokeLinecap="round" />
+      )}
+      {shape === 'star' && (
+        <path d={starPath(w, h)}
+          fill={hasFill ? fillColor : 'none'}
+          stroke={hasStroke ? strokeColor : 'none'}
+          strokeWidth={hasStroke ? strokeWPx : 0} strokeDasharray={hasStroke ? dash : undefined}
+          strokeLinejoin="round" />
+      )}
+    </svg>
+  );
 }
 
 export function ElementOverlay({ element, scale }: ElementOverlayProps) {
@@ -301,24 +372,11 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
         )}
 
         {element.type === 'symbol' && (
-          <svg viewBox="0 0 100 100" className="w-full h-full pointer-events-none select-none" style={{ display: 'block' }}>
-            {element.shape === 'check' && (
-              <path d="M20 52 L40 72 L82 28" fill="none" stroke={element.color}
-                strokeWidth={element.strokeWidth * 100} strokeLinecap="round" strokeLinejoin="round" />
-            )}
-            {element.shape === 'cross' && (
-              <path d="M22 22 L78 78 M78 22 L22 78" fill="none" stroke={element.color}
-                strokeWidth={element.strokeWidth * 100} strokeLinecap="round" />
-            )}
-            {element.shape === 'circle' && (
-              <circle cx="50" cy="50" r="42" fill="none" stroke={element.color}
-                strokeWidth={element.strokeWidth * 100} />
-            )}
-            {element.shape === 'star' && (
-              <path d="M50 5 L61 38 L97 38 L67 59 L78 92 L50 71 L22 92 L33 59 L3 38 L39 38 Z" fill={element.color} />
-            )}
-          </svg>
+          <SymbolGraphic shape={element.shape} strokeColor={element.strokeColor} fillColor={element.fillColor}
+            hasFill={element.hasFill} hasStroke={element.hasStroke} strokeStyle={element.strokeStyle}
+            strokeWidth={element.strokeWidth} width={w} height={h} />
         )}
+
 
         {(element.type === 'text' || element.type === 'date') && (
           isEditing ? (

@@ -4,13 +4,13 @@ import { useRef, useCallback, useState } from 'react';
 import {
   Upload, Type, Calendar, PenLine, Undo2, Redo2,
   Download, Loader2, ChevronLeft, ChevronRight, X,
-  Menu, FileEdit, Check, Circle, Star, Shapes,
+  Menu, FileEdit, Check, Circle, Star, Shapes, Square, Minus,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useStudioStore } from '@/stores/studio.store';
 import { usePdfLoader } from '@/hooks/usePdfLoader';
 import { usePdfExport } from '@/hooks/usePdfExport';
-import { SYMBOL_SHAPES, SYMBOL_DEFAULT_COLOR, SYMBOL_PRESET_COLORS } from '@/lib/constants';
+import { SYMBOL_SHAPES, SYMBOL_SHAPE_DEFAULTS, SYMBOL_PRESET_COLORS } from '@/lib/constants';
 import type { SymbolShape } from '@/types';
 import Image from 'next/image';
 
@@ -21,7 +21,7 @@ export function Toolbar() {
     isExporting, setSignatureModalOpen, currentPage, setCurrentPage,
     pendingSignatureDataUrl, cancelSignaturePlacement,
     downloadFileName, setDownloadFileName,
-    selectedSymbolShape, selectedSymbolColor, setSelectedSymbolShape, setSelectedSymbolColor,
+    selectedSymbolShape, selectedSymbolStrokeColor, setSelectedSymbolShape, setSelectedSymbolStrokeColor,
   } = useStudioStore();
 
   const { loading, error, loadPdf } = usePdfLoader();
@@ -51,7 +51,7 @@ export function Toolbar() {
   ];
 
   const SYMBOL_ICONS: Record<SymbolShape, React.ComponentType<{ className?: string; style?: React.CSSProperties }>> = {
-    check: Check, cross: X, circle: Circle, star: Star,
+    check: Check, cross: X, circle: Circle, star: Star, rectangle: Square, line: Minus,
   };
 
   const pickSymbol = (shape: SymbolShape) => {
@@ -129,7 +129,7 @@ export function Toolbar() {
                   style={{ background: 'var(--color-background)', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-md)', width: 220 }}
                   onClick={(e) => e.stopPropagation()}>
                   <p className="label mb-2">Symbol shape</p>
-                  <div className="grid grid-cols-4 gap-1.5 mb-3">
+                  <div className="grid grid-cols-3 gap-1.5 mb-3">
                     {SYMBOL_SHAPES.map((shape) => {
                       const Icon = SYMBOL_ICONS[shape];
                       return (
@@ -139,22 +139,25 @@ export function Toolbar() {
                           style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
                           onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = '#EEF2FF'; }}
                           onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--color-surface)'; }}>
-                          <Icon className="w-4 h-4" style={{ color: SYMBOL_DEFAULT_COLOR[shape] }} />
+                          <Icon className="w-4 h-4" style={{ color: SYMBOL_SHAPE_DEFAULTS[shape].strokeColor }} />
                         </button>
                       );
                     })}
                   </div>
                   <p className="label mb-2">Color</p>
                   <div className="flex items-center gap-1.5 flex-wrap">
-                    {SYMBOL_PRESET_COLORS.map((c) => (
-                      <button key={c} onClick={() => setSelectedSymbolColor(c)}
+                    {SYMBOL_PRESET_COLORS.filter((c) => c !== 'transparent').map((c) => (
+                      <button key={c} onClick={() => setSelectedSymbolStrokeColor(c)}
                         className="w-6 h-6 rounded-full shrink-0"
-                        style={{ background: c, border: selectedSymbolColor === c ? '2px solid var(--color-primary)' : '1px solid var(--color-border)' }} />
+                        style={{ background: c, border: selectedSymbolStrokeColor === c ? '2px solid var(--color-primary)' : '1px solid var(--color-border)' }} />
                     ))}
-                    <input type="color" value={selectedSymbolColor}
-                      onChange={(e) => setSelectedSymbolColor(e.target.value)}
+                    <input type="color" value={selectedSymbolStrokeColor}
+                      onChange={(e) => setSelectedSymbolStrokeColor(e.target.value)}
                       className="w-6 h-6 rounded-full cursor-pointer shrink-0" />
                   </div>
+                  <p className="text-xs mt-2" style={{ color: 'var(--color-text-secondary)' }}>
+                    Fine-tune fill, border style &amp; thickness from the Properties panel after placing.
+                  </p>
                 </div>
               </>
             )}
@@ -251,7 +254,7 @@ export function Toolbar() {
               {!isPlacing && pdfDoc && (
                 <div className="px-3 py-1.5">
                   <p className="text-xs font-medium mb-1.5" style={{ color: 'var(--color-text-secondary)' }}>Symbol</p>
-                  <div className="grid grid-cols-4 gap-1.5 mb-2">
+                  <div className="grid grid-cols-3 gap-1.5 mb-2">
                     {SYMBOL_SHAPES.map((shape) => {
                       const Icon = SYMBOL_ICONS[shape];
                       const active = activeToolMode === 'symbol' && selectedSymbolShape === shape;
@@ -259,18 +262,21 @@ export function Toolbar() {
                         <button key={shape} onClick={() => pickSymbol(shape)}
                           className="flex items-center justify-center h-9 rounded-lg"
                           style={{ background: active ? '#EEF2FF' : 'var(--color-surface)', border: '1px solid var(--color-border)' }}>
-                          <Icon className="w-4 h-4" style={{ color: SYMBOL_DEFAULT_COLOR[shape] }} />
+                          <Icon className="w-4 h-4" style={{ color: SYMBOL_SHAPE_DEFAULTS[shape].strokeColor }} />
                         </button>
                       );
                     })}
                   </div>
                   <div className="flex items-center gap-1.5 flex-wrap">
-                    {SYMBOL_PRESET_COLORS.map((c) => (
-                      <button key={c} onClick={() => setSelectedSymbolColor(c)}
+                    {SYMBOL_PRESET_COLORS.filter((c) => c !== 'transparent').map((c) => (
+                      <button key={c} onClick={() => setSelectedSymbolStrokeColor(c)}
                         className="w-6 h-6 rounded-full shrink-0"
-                        style={{ background: c, border: selectedSymbolColor === c ? '2px solid var(--color-primary)' : '1px solid var(--color-border)' }} />
+                        style={{ background: c, border: selectedSymbolStrokeColor === c ? '2px solid var(--color-primary)' : '1px solid var(--color-border)' }} />
                     ))}
                   </div>
+                  <p className="text-xs mt-1.5" style={{ color: 'var(--color-text-secondary)' }}>
+                    Fill, border style &amp; thickness: edit in Properties after placing.
+                  </p>
                 </div>
               )}
               <div className="h-px mx-1 my-2" style={{ background: 'var(--color-border)' }} />

@@ -1,8 +1,11 @@
 import { create } from 'zustand';
 import { immer } from 'zustand/middleware/immer';
-import type { PdfElement, PdfDocument, SignatureMode, SymbolShape } from '@/types';
+import type { PdfElement, PdfDocument, SignatureMode, SymbolShape, StrokeStyle } from '@/types';
 import { generateId } from '@/lib/utils';
-import { DEFAULT_TEXT_ELEMENT, DEFAULT_DATE_ELEMENT, DEFAULT_SCALE, DEFAULT_SYMBOL_ELEMENT, SYMBOL_DEFAULT_COLOR } from '@/lib/constants';
+import {
+  DEFAULT_TEXT_ELEMENT, DEFAULT_DATE_ELEMENT, DEFAULT_SCALE,
+  SYMBOL_SHAPE_DEFAULTS, SYMBOL_SHAPE_SIZE,
+} from '@/lib/constants';
 import { formatDate } from '@/lib/utils';
 
 interface HistoryEntry { elements: PdfElement[]; }
@@ -22,7 +25,12 @@ interface StudioState {
   pendingSignatureDataUrl: string | null;
   pendingSignatureSize: { width: number; height: number } | null;
   selectedSymbolShape: SymbolShape;
-  selectedSymbolColor: string;
+  selectedSymbolStrokeColor: string;
+  selectedSymbolFillColor: string;
+  selectedSymbolHasFill: boolean;
+  selectedSymbolHasStroke: boolean;
+  selectedSymbolStrokeStyle: StrokeStyle;
+  selectedSymbolStrokeWidth: number;
   clipboard: PdfElement | null;
   lockedIds: Record<string, boolean>;
   history: HistoryEntry[];
@@ -47,7 +55,12 @@ interface StudioState {
   addTextField: (pageIndex: number, x?: number, y?: number) => void;
   addDateField: (pageIndex: number, x?: number, y?: number) => void;
   setSelectedSymbolShape: (shape: SymbolShape) => void;
-  setSelectedSymbolColor: (color: string) => void;
+  setSelectedSymbolStrokeColor: (color: string) => void;
+  setSelectedSymbolFillColor: (color: string) => void;
+  setSelectedSymbolHasFill: (v: boolean) => void;
+  setSelectedSymbolHasStroke: (v: boolean) => void;
+  setSelectedSymbolStrokeStyle: (style: StrokeStyle) => void;
+  setSelectedSymbolStrokeWidth: (v: number) => void;
   addSymbolField: (pageIndex: number, x?: number, y?: number) => void;
   updateElement: (id: string, updates: Partial<PdfElement>) => void;
   updateSelectedElements: (updates: Partial<PdfElement>) => void;
@@ -83,7 +96,12 @@ export const useStudioStore = create<StudioState>()(
     pendingSignatureDataUrl: null,
     pendingSignatureSize: null,
     selectedSymbolShape: 'check',
-    selectedSymbolColor: SYMBOL_DEFAULT_COLOR.check,
+    selectedSymbolStrokeColor: SYMBOL_SHAPE_DEFAULTS.check.strokeColor,
+    selectedSymbolFillColor: SYMBOL_SHAPE_DEFAULTS.check.fillColor,
+    selectedSymbolHasFill: SYMBOL_SHAPE_DEFAULTS.check.hasFill,
+    selectedSymbolHasStroke: SYMBOL_SHAPE_DEFAULTS.check.hasStroke,
+    selectedSymbolStrokeStyle: 'solid',
+    selectedSymbolStrokeWidth: SYMBOL_SHAPE_DEFAULTS.check.strokeWidth,
     clipboard: null,
     lockedIds: {},
     history: [{ elements: [] }],
@@ -221,25 +239,42 @@ export const useStudioStore = create<StudioState>()(
     },
 
     setSelectedSymbolShape: (shape) => set((s) => {
+      const d = SYMBOL_SHAPE_DEFAULTS[shape];
       s.selectedSymbolShape = shape;
-      s.selectedSymbolColor = SYMBOL_DEFAULT_COLOR[shape];
+      s.selectedSymbolStrokeColor = d.strokeColor;
+      s.selectedSymbolFillColor = d.fillColor;
+      s.selectedSymbolHasFill = d.hasFill;
+      s.selectedSymbolHasStroke = d.hasStroke;
+      s.selectedSymbolStrokeWidth = d.strokeWidth;
     }),
 
-    setSelectedSymbolColor: (color) => set((s) => { s.selectedSymbolColor = color; }),
+    setSelectedSymbolStrokeColor: (color) => set((s) => { s.selectedSymbolStrokeColor = color; }),
+    setSelectedSymbolFillColor: (color) => set((s) => { s.selectedSymbolFillColor = color; }),
+    setSelectedSymbolHasFill: (v) => set((s) => { s.selectedSymbolHasFill = v; }),
+    setSelectedSymbolHasStroke: (v) => set((s) => { s.selectedSymbolHasStroke = v; }),
+    setSelectedSymbolStrokeStyle: (style) => set((s) => { s.selectedSymbolStrokeStyle = style; }),
+    setSelectedSymbolStrokeWidth: (v) => set((s) => { s.selectedSymbolStrokeWidth = v; }),
 
     addSymbolField: (pageIndex, x, y) => {
       get().pushHistory();
-      const { selectedSymbolShape, selectedSymbolColor } = get();
+      const {
+        selectedSymbolShape: shape, selectedSymbolStrokeColor, selectedSymbolFillColor,
+        selectedSymbolHasFill, selectedSymbolHasStroke, selectedSymbolStrokeStyle, selectedSymbolStrokeWidth,
+      } = get();
+      const { width, height } = SYMBOL_SHAPE_SIZE[shape];
       const el: PdfElement = {
-        id: generateId(), type: 'symbol', pageIndex,
-        shape: selectedSymbolShape,
-        color: selectedSymbolColor,
-        strokeWidth: DEFAULT_SYMBOL_ELEMENT.strokeWidth,
+        id: generateId(), type: 'symbol', pageIndex, shape,
+        strokeColor: selectedSymbolStrokeColor,
+        fillColor: selectedSymbolFillColor,
+        hasFill: selectedSymbolHasFill,
+        hasStroke: selectedSymbolHasStroke,
+        strokeStyle: selectedSymbolStrokeStyle,
+        strokeWidth: selectedSymbolStrokeWidth,
         position: {
-          x: x !== undefined ? Math.max(0, x - DEFAULT_SYMBOL_ELEMENT.width / 2) : 100,
-          y: y !== undefined ? Math.max(0, y - DEFAULT_SYMBOL_ELEMENT.height / 2) : 200,
+          x: x !== undefined ? Math.max(0, x - width / 2) : 100,
+          y: y !== undefined ? Math.max(0, y - height / 2) : 200,
         },
-        size: { width: DEFAULT_SYMBOL_ELEMENT.width, height: DEFAULT_SYMBOL_ELEMENT.height },
+        size: { width, height },
       };
       set((s) => { s.elements.push(el); s.selectedId = el.id; s.selectedIds = [el.id]; s.activeToolMode = 'select'; });
     },

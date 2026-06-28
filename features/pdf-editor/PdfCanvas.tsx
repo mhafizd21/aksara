@@ -4,8 +4,8 @@ import { useRef, useCallback, useState, useEffect } from 'react';
 import { Clipboard, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useStudioStore } from '@/stores/studio.store';
 import { PdfPageRenderer } from '@/features/pdf-viewer/PdfPageRenderer';
-import { ElementOverlay } from '@/features/pdf-editor/ElementOverlay';
-import { MIN_SCALE, MAX_SCALE } from '@/lib/constants';
+import { ElementOverlay, SymbolGraphic } from '@/features/pdf-editor/ElementOverlay';
+import { MIN_SCALE, MAX_SCALE, SYMBOL_SHAPE_SIZE } from '@/lib/constants';
 import { clampValue } from '@/lib/utils';
 
 export function PdfCanvas() {
@@ -15,6 +15,8 @@ export function PdfCanvas() {
     addTextField, addDateField, addSymbolField, setActiveToolMode,
     pendingSignatureDataUrl, pendingSignatureSize,
     placeSignatureAtPosition, cancelSignaturePlacement,
+    selectedSymbolShape, selectedSymbolStrokeColor, selectedSymbolFillColor,
+    selectedSymbolHasFill, selectedSymbolHasStroke, selectedSymbolStrokeStyle, selectedSymbolStrokeWidth,
     pasteElement, clipboard,
     selectedIds,
   } = useStudioStore();
@@ -35,13 +37,19 @@ export function PdfCanvas() {
   const [swipeOffset, setSwipeOffset] = useState(0);
 
   const isPlacingSignature = activeToolMode === 'signature' && !!pendingSignatureDataUrl;
+  const isPlacingSymbol = activeToolMode === 'symbol';
+  const isPlacingGhost = isPlacingSignature || isPlacingSymbol;
 
   useEffect(() => {
-    if (!isPlacingSignature) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') cancelSignaturePlacement(); };
+    if (!isPlacingSignature && !isPlacingSymbol) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (isPlacingSignature) cancelSignaturePlacement();
+      else setActiveToolMode('select');
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isPlacingSignature, cancelSignaturePlacement]);
+  }, [isPlacingSignature, isPlacingSymbol, cancelSignaturePlacement, setActiveToolMode]);
 
   useEffect(() => {
     if (!ctxMenu) return;
@@ -72,7 +80,7 @@ export function PdfCanvas() {
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     if (!containerRef.current) return;
 
-    if (isPlacingSignature) {
+    if (isPlacingGhost) {
       const { canvasX, canvasY } = getCanvasCoords(e.clientX, e.clientY);
       setGhostPos({ x: canvasX, y: canvasY });
       return;
@@ -93,13 +101,13 @@ export function PdfCanvas() {
         h: Math.abs(curY - startY),
       });
     }
-  }, [isPlacingSignature, getCanvasCoords]);
+  }, [isPlacingGhost, getCanvasCoords]);
 
   const handleMouseLeave = useCallback(() => { setGhostPos(null); }, []);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (activeToolMode !== 'select') return;
-    if (isPlacingSignature) return;
+    if (isPlacingGhost) return;
     if (e.button !== 0) return;
     // Only start drag-select when clicking directly on the canvas background
     const target = e.target as HTMLElement;
@@ -185,7 +193,7 @@ export function PdfCanvas() {
 
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
-  }, [activeToolMode, isPlacingSignature, clearSelection, setSelectedIds]);
+  }, [activeToolMode, isPlacingGhost, clearSelection, setSelectedIds]);
 
   const handleCanvasClick = useCallback((e: React.MouseEvent) => {
     if (!containerRef.current) return;
@@ -227,7 +235,7 @@ export function PdfCanvas() {
     }
 
     const onElement = (e.target as HTMLElement).closest('[data-element-overlay]');
-    if (onElement || isPlacingSignature) return;
+    if (onElement || isPlacingGhost) return;
 
     const t = e.touches[0];
     if (!containerRef.current) return;
@@ -247,7 +255,7 @@ export function PdfCanvas() {
       swipeRef.current = null;
       setCtxMenu(pos);
     }, 600);
-  }, [isPlacingSignature, scale, currentPage, getCanvasCoords, isHorizontallyOverflowing]);
+  }, [isPlacingGhost, scale, currentPage, getCanvasCoords, isHorizontallyOverflowing]);
 
   const handleTouchMove = useCallback((e: React.TouchEvent) => {
     if (e.touches.length === 2 && pinchRef.current) {
@@ -279,11 +287,11 @@ export function PdfCanvas() {
       }
     }
 
-    if (isPlacingSignature && containerRef.current) {
+    if (isPlacingGhost && containerRef.current) {
       const { canvasX, canvasY } = getCanvasCoords(t.clientX, t.clientY);
       setGhostPos({ x: canvasX, y: canvasY });
     }
-  }, [isPlacingSignature, setScale, pdfDoc, getCanvasCoords, isHorizontallyOverflowing]);
+  }, [isPlacingGhost, setScale, pdfDoc, getCanvasCoords, isHorizontallyOverflowing]);
 
   const handleTouchEnd = useCallback((e: React.TouchEvent) => {
     if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
@@ -315,14 +323,16 @@ export function PdfCanvas() {
 
   const pageElements = elements.filter((el) => el.pageIndex === currentPage);
 
-  const cursor = isPlacingSignature ? 'none'
+  const cursor = isPlacingGhost ? 'none'
     : activeToolMode === 'text' ? 'text'
     : activeToolMode === 'date' ? 'crosshair'
-    : activeToolMode === 'symbol' ? 'crosshair'
     : 'default';
 
   const ghostW = pendingSignatureSize ? pendingSignatureSize.width * scale : 0;
   const ghostH = pendingSignatureSize ? pendingSignatureSize.height * scale : 0;
+  const symbolGhostSize = SYMBOL_SHAPE_SIZE[selectedSymbolShape];
+  const symbolGhostW = symbolGhostSize.width * scale;
+  const symbolGhostH = symbolGhostSize.height * scale;
   const hasClipboard = !!clipboard;
 
   if (!pdfDoc) return null;
@@ -370,11 +380,15 @@ export function PdfCanvas() {
 
       {/* Canvas wrapper */}
       <div ref={wrapperRef} className="flex-1 overflow-auto flex items-start justify-center w-full p-3 sm:p-8">
-        {isPlacingSignature && (
+        {isPlacingGhost && (
           <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium pointer-events-none"
             style={{ background: 'var(--color-primary)', color: '#fff', boxShadow: 'var(--shadow-md)' }}>
-            <span className="hidden sm:inline">Click on the PDF to place your signature</span>
-            <span className="sm:hidden">Tap to place signature</span>
+            <span className="hidden sm:inline">
+              {isPlacingSignature ? 'Click on the PDF to place your signature' : 'Click on the PDF to place the symbol'}
+            </span>
+            <span className="sm:hidden">
+              {isPlacingSignature ? 'Tap to place signature' : 'Tap to place symbol'}
+            </span>
             <span className="opacity-60 text-xs hidden sm:inline">· ESC to cancel</span>
           </div>
         )}
@@ -397,7 +411,7 @@ export function PdfCanvas() {
             background: '#fff',
             boxShadow: '0 4px 24px 0 rgb(0 0 0 / 0.10), 0 1px 4px 0 rgb(0 0 0 / 0.06)',
             borderRadius: 2,
-            touchAction: isPlacingSignature ? 'none' : 'pan-x pan-y',
+            touchAction: isPlacingGhost ? 'none' : 'pan-x pan-y',
             transform: swipeOffset ? `translateX(${Math.max(-40, Math.min(40, swipeOffset * 0.3))}px)` : undefined,
             transition: swipeOffset === 0 ? 'transform 0.2s ease' : undefined,
           }}
@@ -447,6 +461,27 @@ export function PdfCanvas() {
               <img src={pendingSignatureDataUrl} alt="Signature preview"
                 style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
                 draggable={false} />
+            </div>
+          )}
+
+          {/* Symbol ghost */}
+          {isPlacingSymbol && ghostPos && (
+            <div className="absolute pointer-events-none" style={{
+              left: ghostPos.x - symbolGhostW / 2, top: ghostPos.y - symbolGhostH / 2,
+              width: symbolGhostW, height: symbolGhostH,
+              opacity: 0.6,
+            }}>
+              <SymbolGraphic
+                shape={selectedSymbolShape}
+                strokeColor={selectedSymbolStrokeColor}
+                fillColor={selectedSymbolFillColor}
+                hasFill={selectedSymbolHasFill}
+                hasStroke={selectedSymbolHasStroke}
+                strokeStyle={selectedSymbolStrokeStyle}
+                strokeWidth={selectedSymbolStrokeWidth}
+                width={symbolGhostW}
+                height={symbolGhostH}
+              />
             </div>
           )}
         </div>

@@ -3,9 +3,9 @@
 import { useState } from 'react';
 import { useStudioStore } from '@/stores/studio.store';
 import { Settings, Type, Calendar, PenLine, Trash2, ChevronLeft, ChevronRight, X, Layers, Shapes } from 'lucide-react';
-import { FONT_FAMILIES, DATE_FORMATS, SYMBOL_SHAPES, SYMBOL_PRESET_COLORS } from '@/lib/constants';
+import { FONT_FAMILIES, DATE_FORMATS, SYMBOL_SHAPES, SYMBOL_PRESET_COLORS, STROKE_STYLES } from '@/lib/constants';
 import { formatDate } from '@/lib/utils';
-import type { TextField, DateField, SymbolElement, PdfElement } from '@/types';
+import type { TextField, DateField, SymbolElement, SymbolShape, PdfElement } from '@/types';
 
 // Compute the axis-aligned bounding box center of an element after rotation.
 // CSS rotates around the element's own center, so the visual center == the unrotated center.
@@ -500,19 +500,43 @@ function NumberInput({ label, value, min, onChange }: {
   );
 }
 
+const ColorRow = ({ label, value, onPick }: { label: string; value: string; onPick: (c: string) => void }) => (
+  <div className="flex items-center gap-2">
+    <label className="text-xs w-10 shrink-0" style={{ color: 'var(--color-text-secondary)' }}>{label}</label>
+    <input type="color" value={value === 'transparent' ? '#ffffff' : value} onChange={(e) => onPick(e.target.value)}
+      className="w-8 h-7 rounded cursor-pointer shrink-0" style={{ border: '1px solid var(--color-border)' }} />
+    <div className="flex items-center gap-1 flex-wrap">
+      {SYMBOL_PRESET_COLORS.map((c) => (
+        <button key={c} type="button" onClick={() => onPick(c)}
+          className="w-5 h-5 rounded-full shrink-0 relative"
+          title={c === 'transparent' ? 'No color' : c}
+          style={{ background: c === 'transparent' ? '#fff' : c, border: value === c ? '2px solid var(--color-primary)' : '1px solid var(--color-border)' }}>
+          {c === 'transparent' && (
+            <span className="absolute inset-0 rounded-full" style={{ background: 'linear-gradient(to top right, transparent calc(50% - 1px), #DC2626, transparent calc(50% + 1px))' }} />
+          )}
+        </button>
+      ))}
+    </div>
+  </div>
+);
+
 function SymbolStyleSection({ element, onChange }: {
   element: SymbolElement;
   onChange: (u: Partial<SymbolElement>) => void;
 }) {
-  const SHAPE_ICONS: Record<(typeof SYMBOL_SHAPES)[number], string> = {
-    check: '✓', cross: '✕', circle: '○', star: '★',
+  const SHAPE_ICONS: Record<SymbolShape, string> = {
+    check: '✓', cross: '✕', circle: '○', star: '★', rectangle: '▭', line: '—',
   };
+  const canFill = element.shape === 'circle' || element.shape === 'rectangle' || element.shape === 'star';
+  const canToggleStroke = element.shape === 'circle' || element.shape === 'rectangle' || element.shape === 'star';
+  const hasDashStyle = element.shape === 'circle' || element.shape === 'rectangle' || element.shape === 'line';
+
   return (
     <Section title="Symbol">
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           <label className="text-xs w-10 shrink-0" style={{ color: 'var(--color-text-secondary)' }}>Shape</label>
-          <div className="flex-1 grid grid-cols-4 gap-1.5">
+          <div className="flex-1 grid grid-cols-3 gap-1.5">
             {SYMBOL_SHAPES.map((shape) => (
               <button key={shape} type="button" onClick={() => onChange({ shape })}
                 className="flex items-center justify-center h-8 rounded-lg text-sm"
@@ -526,24 +550,48 @@ function SymbolStyleSection({ element, onChange }: {
             ))}
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <label className="text-xs w-10 shrink-0" style={{ color: 'var(--color-text-secondary)' }}>Color</label>
-          <input type="color" value={element.color} onChange={(e) => onChange({ color: e.target.value })}
-            className="w-8 h-7 rounded cursor-pointer" style={{ border: '1px solid var(--color-border)' }} />
-          <div className="flex items-center gap-1 flex-wrap">
-            {SYMBOL_PRESET_COLORS.map((c) => (
-              <button key={c} type="button" onClick={() => onChange({ color: c })}
-                className="w-5 h-5 rounded-full shrink-0"
-                style={{ background: c, border: element.color === c ? '2px solid var(--color-primary)' : '1px solid var(--color-border)' }} />
-            ))}
+
+        {canToggleStroke ? (
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={element.hasStroke} onChange={(e) => onChange({ hasStroke: e.target.checked })} />
+            <span className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>Show border</span>
+          </label>
+        ) : null}
+
+        {(!canToggleStroke || element.hasStroke) && (
+          <ColorRow label="Stroke" value={element.strokeColor} onPick={(c) => onChange({ strokeColor: c })} />
+        )}
+
+        {canFill && (
+          <>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={element.hasFill} onChange={(e) => onChange({ hasFill: e.target.checked })} />
+              <span className="text-xs" style={{ color: 'var(--color-text-secondary)' }}>Fill</span>
+            </label>
+            {element.hasFill && (
+              <ColorRow label="Fill" value={element.fillColor} onPick={(c) => onChange({ fillColor: c })} />
+            )}
+          </>
+        )}
+
+        {hasDashStyle && (!canToggleStroke || element.hasStroke) && (
+          <div className="flex items-center gap-2">
+            <label className="text-xs w-10 shrink-0" style={{ color: 'var(--color-text-secondary)' }}>Border</label>
+            <select value={element.strokeStyle} onChange={(e) => onChange({ strokeStyle: e.target.value as SymbolElement['strokeStyle'] })}
+              className="input flex-1" style={{ fontSize: 12 }}>
+              {STROKE_STYLES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
           </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <label className="text-xs w-10 shrink-0" style={{ color: 'var(--color-text-secondary)' }}>Thick</label>
-          <input type="range" min={0.06} max={0.35} step={0.01} value={element.strokeWidth}
-            onChange={(e) => onChange({ strokeWidth: Number(e.target.value) })}
-            className="flex-1" disabled={element.shape === 'star'} />
-        </div>
+        )}
+
+        {(!canToggleStroke || element.hasStroke) && (
+          <div className="flex items-center gap-2">
+            <label className="text-xs w-10 shrink-0" style={{ color: 'var(--color-text-secondary)' }}>Thick</label>
+            <input type="range" min={0.02} max={0.5} step={0.01} value={element.strokeWidth}
+              onChange={(e) => onChange({ strokeWidth: Number(e.target.value) })}
+              className="flex-1" />
+          </div>
+        )}
       </div>
     </Section>
   );

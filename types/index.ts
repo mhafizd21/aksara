@@ -1,6 +1,8 @@
 export type ElementType = 'signature' | 'text' | 'date' | 'symbol';
 
-export type SymbolShape = 'check' | 'cross' | 'circle' | 'star';
+export type SymbolShape = 'check' | 'cross' | 'circle' | 'star' | 'rectangle' | 'line';
+
+export type StrokeStyle = 'solid' | 'dashed' | 'dotted';
 
 export interface Position {
   x: number;
@@ -46,8 +48,17 @@ export interface DateField extends BaseElement {
 export interface SymbolElement extends BaseElement {
   type: 'symbol';
   shape: SymbolShape;
-  color: string;
-  /** Stroke thickness as a ratio of min(width, height). Ignored for filled shapes (star). */
+  /** Outline color. Used by every shape (the 'star' outline is optional, see hasStroke). */
+  strokeColor: string;
+  /** Fill color. Only rendered when hasFill is true. */
+  fillColor: string;
+  /** Whether the fill color is applied. Always false for 'check' / 'cross' / 'line'. */
+  hasFill: boolean;
+  /** Whether the stroke/outline is drawn. Always true except optionally for filled shapes. */
+  hasStroke: boolean;
+  /** Dash pattern of the outline. Applies to 'rectangle', 'circle' and 'line'. */
+  strokeStyle: StrokeStyle;
+  /** Stroke thickness as a ratio of min(width, height). */
   strokeWidth: number;
 }
 

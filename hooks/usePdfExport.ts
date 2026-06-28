@@ -25,6 +25,12 @@ function hexToRgb(hex: string) {
   return [parseInt(c.slice(0,2),16)/255, parseInt(c.slice(2,4),16)/255, parseInt(c.slice(4,6),16)/255] as const;
 }
 
+function buildDash(style: 'solid' | 'dashed' | 'dotted', strokeW: number) {
+  if (style === 'dashed') return { dashArray: [strokeW * 2.4, strokeW * 1.6] };
+  if (style === 'dotted') return { dashArray: [0.01, strokeW * 1.6] };
+  return { dashArray: undefined };
+}
+
 /**
  * pdf-lib rotates CCW around the given (x,y) origin — not around center.
  * CSS rotates CW around center.
@@ -54,7 +60,7 @@ export function usePdfExport() {
     if (!pdfDoc) return;
     setIsExporting(true);
     try {
-      const { PDFDocument, rgb, StandardFonts, degrees } = await import('pdf-lib');
+      const { PDFDocument, rgb, StandardFonts, degrees, LineCapStyle } = await import('pdf-lib');
       const arrayBuffer = await pdfDoc.file.arrayBuffer();
       const doc = await PDFDocument.load(arrayBuffer);
       const pages = doc.getPages();
@@ -127,10 +133,10 @@ export function usePdfExport() {
 
         } else if (el.type === 'symbol') {
           const symEl = el as SymbolElement;
-          const [r, g, b] = hexToRgb(symEl.color);
-          const color = rgb(r, g, b);
           const minDim = Math.min(elW, elH);
-          const strokeW = Math.max(0.75, symEl.strokeWidth * minDim);
+          const strokeW = Math.max(0.5, symEl.strokeWidth * minDim);
+          const strokeColor = symEl.strokeColor !== 'transparent' ? rgb(...hexToRgb(symEl.strokeColor)) : undefined;
+          const fillColor = symEl.hasFill && symEl.fillColor !== 'transparent' ? rgb(...hexToRgb(symEl.fillColor)) : undefined;
           const rr = (rot * Math.PI) / 180;
 
           // Transform a point given as a fraction of (elW, elH) — origin at element
@@ -144,35 +150,51 @@ export function usePdfExport() {
             };
           };
 
-          if (symEl.shape === 'check') {
+          if (symEl.shape === 'check' && strokeColor) {
             const p1 = toWorld(-0.30, -0.02);
             const p2 = toWorld(-0.10, -0.22);
             const p3 = toWorld(0.32, 0.22);
-            page.drawLine({ start: p1, end: p2, thickness: strokeW, color, lineCap: 1 });
-            page.drawLine({ start: p2, end: p3, thickness: strokeW, color, lineCap: 1 });
-          } else if (symEl.shape === 'cross') {
+            page.drawLine({ start: p1, end: p2, thickness: strokeW, color: strokeColor, lineCap: LineCapStyle.Round });
+            page.drawLine({ start: p2, end: p3, thickness: strokeW, color: strokeColor, lineCap: LineCapStyle.Round });
+          } else if (symEl.shape === 'cross' && strokeColor) {
             const p1 = toWorld(-0.28, 0.28);
             const p2 = toWorld(0.28, -0.28);
             const p3 = toWorld(0.28, 0.28);
             const p4 = toWorld(-0.28, -0.28);
-            page.drawLine({ start: p1, end: p2, thickness: strokeW, color, lineCap: 1 });
-            page.drawLine({ start: p3, end: p4, thickness: strokeW, color, lineCap: 1 });
+            page.drawLine({ start: p1, end: p2, thickness: strokeW, color: strokeColor, lineCap: LineCapStyle.Round });
+            page.drawLine({ start: p3, end: p4, thickness: strokeW, color: strokeColor, lineCap: LineCapStyle.Round });
+          } else if (symEl.shape === 'line' && strokeColor) {
+            const p1 = toWorld(-0.5 + strokeW / 2 / elW, 0);
+            const p2 = toWorld(0.5 - strokeW / 2 / elW, 0);
+            const { dashArray } = buildDash(symEl.strokeStyle, strokeW);
+            page.drawLine({ start: p1, end: p2, thickness: strokeW, color: strokeColor, dashArray, lineCap: LineCapStyle.Round });
           } else if (symEl.shape === 'circle') {
-            // Ellipses are rotationally symmetric when elW === elH; rotation is ignored
-            // here since pdf-lib's drawEllipse has no rotate option.
+            const { dashArray } = buildDash(symEl.strokeStyle, strokeW);
             page.drawEllipse({
               x: cx, y: cy,
-              xScale: (elW / 2) * 0.84, yScale: (elH / 2) * 0.84,
-              borderColor: color, borderWidth: strokeW,
+              xScale: Math.max(0, elW / 2 - strokeW / 2), yScale: Math.max(0, elH / 2 - strokeW / 2),
+              rotate: degrees(-rot),
+              color: fillColor, borderColor: symEl.hasStroke ? strokeColor : undefined,
+              borderWidth: strokeW, borderDashArray: dashArray,
+            });
+          } else if (symEl.shape === 'rectangle') {
+            const origin = getRotatedOrigin(cx, cy, elW, elH, rot);
+            const { dashArray } = buildDash(symEl.strokeStyle, strokeW);
+            page.drawRectangle({
+              x: origin.x, y: origin.y, width: elW, height: elH,
+              rotate: degrees(-rot),
+              color: fillColor, borderColor: symEl.hasStroke ? strokeColor : undefined,
+              borderWidth: strokeW, borderDashArray: dashArray,
             });
           } else if (symEl.shape === 'star') {
             const starPath = 'M50 5 L61 38 L97 38 L67 59 L78 92 L50 71 L22 92 L33 59 L3 38 L39 38 Z';
             const origin = getRotatedOrigin(cx, cy, elW, elH, rot);
             page.drawSvgPath(starPath, {
               x: origin.x, y: origin.y,
-              scale: Math.min(elW, elH) / 100,
-              color,
+              scale: minDim / 100,
               rotate: degrees(-rot),
+              color: fillColor, borderColor: symEl.hasStroke ? strokeColor : undefined,
+              borderWidth: symEl.hasStroke ? strokeW : 0,
             });
           }
         }
