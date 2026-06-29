@@ -101,6 +101,10 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
   const isPrimary = selectedId === element.id;
   const isMultiSelect = selectedIds.length > 1;
 
+  // Direct ref to the element DOM node — used for rotate center calculation
+  // instead of querySelector so it works immediately on mount before animation completes.
+  const elementRef = useRef<HTMLDivElement>(null);
+
   const dragStartRef = useRef<{ mouseX: number; mouseY: number; elX: number; elY: number } | null>(null);
   const resizeRef = useRef<{ handle: ResizeHandle; startMouseX: number; startMouseY: number; startX: number; startY: number; startW: number; startH: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -189,6 +193,9 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     if (isEditing) return;
     e.stopPropagation();
+
+    // Notify canvas that this touch hit an element so it won't clear selection
+    e.currentTarget.dispatchEvent(new CustomEvent('element-touch-start', { bubbles: true }));
 
     const wasAlreadySelected = selectedIds.includes(element.id);
     if (!wasAlreadySelected) setSelectedId(element.id);
@@ -296,8 +303,9 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
   }, [startResize]);
 
   const startRotate = useCallback((startX: number, startY: number) => {
-    const el = document.querySelector(`[data-element-id="${element.id}"]`) as HTMLElement | null;
-    const rect = el?.getBoundingClientRect();
+    // Use elementRef directly instead of querySelector so this works
+    // immediately on mount, before the entrance animation has completed.
+    const rect = elementRef.current?.getBoundingClientRect();
     if (!rect) return;
     const cx = rect.left + rect.width / 2;
     const cy = rect.top + rect.height / 2;
@@ -395,6 +403,7 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
     <>
       {/* Element wrapper — animate on mount (scale in from center) */}
       <motion.div
+        ref={elementRef}
         data-element-id={element.id}
         onMouseDown={handleMouseDown}
         onDoubleClick={handleDoubleClick}

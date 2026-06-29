@@ -29,14 +29,17 @@ export function PdfCanvas() {
   const dragSelectRef = useRef<{ startX: number; startY: number; moved: boolean } | null>(null);
   const [dragRect, setDragRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
 
-  const pinchRef = useRef<{ dist: number; scale: number } | null>(null);
+  const pinchRef = useRef<{ dist: number; scale: number; midX: number; midY: number } | null>(null);
   const isPinchingRef = useRef(false);
+  // Track pinch state as React state so touchAction updates reactively
+  const [isPinching, setIsPinching] = useState(false);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const swipeRef = useRef<{ startX: number; startY: number; startPage: number } | null>(null);
   const [swipeOffset, setSwipeOffset] = useState(0);
 
-  // For tap-to-unselect: track whether the touch started on an element
-  const tapStartRef = useRef<{ x: number; y: number; time: number; hitElement: boolean } | null>(null);
+  // Track whether the current touch started on an element (set via custom event from ElementOverlay)
+  const touchHitElementRef = useRef(false);
+  const tapStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
 
   const isPlacingSignature = activeToolMode === 'signature' && !!pendingSignatureDataUrl;
   const isPlacingSymbol = activeToolMode === 'symbol';
@@ -60,6 +63,17 @@ export function PdfCanvas() {
     window.addEventListener('contextmenu', close);
     return () => { window.removeEventListener('click', close); window.removeEventListener('contextmenu', close); };
   }, [ctxMenu]);
+
+  // Listen for the custom event dispatched by ElementOverlay when a touch lands on an element.
+  // This lets us distinguish "tap on element" vs "tap on canvas" for unselect logic,
+  // even though ElementOverlay calls stopPropagation() on the React touch event.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const onElementTouch = () => { touchHitElementRef.current = true; };
+    el.addEventListener('element-touch-start', onElementTouch);
+    return () => el.removeEventListener('element-touch-start', onElementTouch);
+  }, []);
 
   const getCanvasCoords = useCallback((clientX: number, clientY: number) => {
     if (!containerRef.current) return { canvasX: 0, canvasY: 0, pdfX: 0, pdfY: 0 };
@@ -170,47 +184,45 @@ export function PdfCanvas() {
   }, [getCanvasCoords]);
 
   // ── TOUCH ─────────────────────────────────────────────────────────────────
-  // Strategy: keep React synthetic events (so stopPropagation from ElementOverlay
-  // correctly blocks canvas handlers). Fix unselect by checking element hit-test
-  // on the store directly instead of relying on event.target bubbling.
 
   const getTouchDist = (a: React.Touch, b: React.Touch) =>
     Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
 
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    // Reset element-hit flag at the start of each touch sequence.
+    // ElementOverlay.handleTouchStart will dispatch 'element-touch-start' via bubbling
+    // (caught by the useEffect listener on containerRef) and set this to true
+    // before this handler reads it — because native DOM listeners fire before
+    // React synthetic handlers when attached to the same element.
+    // However, to be safe we reset here and read the flag in touchEnd.
+    touchHitElementRef.current = false;
+
     if (e.touches.length === 2) {
       isPinchingRef.current = true;
+      setIsPinching(true);
       if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
       swipeRef.current = null;
-      pinchRef.current = { dist: getTouchDist(e.touches[0], e.touches[1]), scale };
+      const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      pinchRef.current = { dist: getTouchDist(e.touches[0], e.touches[1]), scale, midX, midY };
       return;
     }
 
     const t = e.touches[0];
-
-    // Hit-test against elements in store (PDF coords) to detect tap on element
-    const { pdfX, pdfY } = getCanvasCoords(t.clientX, t.clientY);
-    const state = useStudioStore.getState();
-    const hitElement = state.elements.some((el) =>
-      el.pageIndex === state.currentPage &&
-      pdfX >= el.position.x && pdfX <= el.position.x + el.size.width &&
-      pdfY >= el.position.y && pdfY <= el.position.y + el.size.height
-    );
-
-    tapStartRef.current = { x: t.clientX, y: t.clientY, time: Date.now(), hitElement };
+    tapStartRef.current = { x: t.clientX, y: t.clientY, time: Date.now() };
 
     if (isPlacingGhost) return;
 
-    if (!hitElement) {
-      swipeRef.current = isHorizontallyOverflowing()
-        ? null
-        : { startX: t.clientX, startY: t.clientY, startPage: currentPage };
-      isPinchingRef.current = false;
-      setSwipeOffset(0);
+    const { pdfX, pdfY } = getCanvasCoords(t.clientX, t.clientY);
 
-      const pos = { x: t.clientX, y: t.clientY, elX: pdfX, elY: pdfY };
-      longPressTimer.current = setTimeout(() => { swipeRef.current = null; setCtxMenu(pos); }, 600);
-    }
+    swipeRef.current = isHorizontallyOverflowing()
+      ? null
+      : { startX: t.clientX, startY: t.clientY, startPage: currentPage };
+    isPinchingRef.current = false;
+    setSwipeOffset(0);
+
+    const pos = { x: t.clientX, y: t.clientY, elX: pdfX, elY: pdfY };
+    longPressTimer.current = setTimeout(() => { swipeRef.current = null; setCtxMenu(pos); }, 600);
   }, [isPlacingGhost, scale, currentPage, getCanvasCoords, isHorizontallyOverflowing]);
 
   const handleTouchMove = useCallback((e: React.TouchEvent) => {
@@ -249,10 +261,16 @@ export function PdfCanvas() {
     if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
 
     const wasPinching = isPinchingRef.current;
-    if (e.touches.length < 2) { pinchRef.current = null; isPinchingRef.current = false; }
+    if (e.touches.length < 2) {
+      pinchRef.current = null;
+      isPinchingRef.current = false;
+      setIsPinching(false);
+    }
 
-    // Tap-to-unselect: if tap was on empty canvas (not on any element) → clear selection
-    if (tapStartRef.current && !tapStartRef.current.hitElement && !wasPinching && !isPlacingGhost) {
+    // Tap-to-unselect: clear selection only when tap was on empty canvas
+    // (not on any element). We rely on the custom event from ElementOverlay
+    // to set touchHitElementRef.current = true when an element was touched.
+    if (tapStartRef.current && !touchHitElementRef.current && !wasPinching && !isPlacingGhost) {
       const touch = e.changedTouches[0];
       const dx = Math.abs(touch.clientX - tapStartRef.current.x);
       const dy = Math.abs(touch.clientY - tapStartRef.current.y);
@@ -262,6 +280,7 @@ export function PdfCanvas() {
       }
     }
     tapStartRef.current = null;
+    touchHitElementRef.current = false;
 
     if (swipeRef.current && pdfDoc && !wasPinching) {
       const dx = swipeOffset;
@@ -332,7 +351,10 @@ export function PdfCanvas() {
             background: '#fff',
             boxShadow: '0 4px 24px 0 rgb(0 0 0 / 0.10), 0 1px 4px 0 rgb(0 0 0 / 0.06)',
             borderRadius: 2,
-            touchAction: isPlacingGhost ? 'none' : 'pan-x pan-y',
+            // Disable all browser touch handling during pinch or ghost placement
+            // so the browser doesn't interfere with our custom zoom / pan logic.
+            // During normal single-finger use, allow native scroll.
+            touchAction: isPlacingGhost || isPinching ? 'none' : 'pan-x pan-y',
             transform: swipeOffset ? `translateX(${Math.max(-40, Math.min(40, swipeOffset * 0.3))}px)` : undefined,
             transition: swipeOffset === 0 ? 'transform 0.2s ease' : undefined,
           }}
