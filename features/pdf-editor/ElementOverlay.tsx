@@ -2,6 +2,7 @@
 
 import { useRef, useState, useCallback, useEffect } from 'react';
 import { Trash2, Copy, Scissors, Clipboard, GripHorizontal, Lock, Unlock, RotateCw } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import type { PdfElement, SymbolElement } from '@/types';
 import { useStudioStore } from '@/stores/studio.store';
 
@@ -15,7 +16,6 @@ function getStrokeDash(style: 'solid' | 'dashed' | 'dotted', strokeWidthPx: numb
   return undefined;
 }
 
-// 5-point star, normalized to a 0–1 box (fraction of width/height).
 const STAR_POINTS_FRAC: [number, number][] = [
   [0.50, 0.05], [0.61, 0.38], [0.97, 0.38], [0.67, 0.59], [0.78, 0.92],
   [0.50, 0.71], [0.22, 0.92], [0.33, 0.59], [0.03, 0.38], [0.39, 0.38],
@@ -158,133 +158,175 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
 
     const onMove = (ev: MouseEvent) => {
       if (!dragStartRef.current) return;
-      if (!didMoveRef.current && Math.abs(ev.clientX - dragStartRef.current.mouseX) < 2 && Math.abs(ev.clientY - dragStartRef.current.mouseY) < 2) return;
-      if (!didMoveRef.current) { pushHistory(); didMoveRef.current = true; setIsDragging(true); }
       const dx = (ev.clientX - dragStartRef.current.mouseX) / scale;
       const dy = (ev.clientY - dragStartRef.current.mouseY) / scale;
-      if (multiDragStarts.length > 1) {
-        for (const { id, startX, startY } of multiDragStarts)
-          updateElement(id, { position: { x: Math.max(0, startX + dx), y: Math.max(0, startY + dy) } });
-      } else {
-        updateElement(element.id, { position: { x: Math.max(0, dragStartRef.current.elX + dx), y: Math.max(0, dragStartRef.current.elY + dy) } });
+      if (!didMoveRef.current && (Math.abs(dx) > 2 || Math.abs(dy) > 2)) {
+        didMoveRef.current = true;
+        setIsDragging(true);
+      }
+      if (didMoveRef.current) {
+        if (isMultiSelect && multiDragStarts.length > 0) {
+          multiDragStarts.forEach(({ id, startX, startY }) => {
+            updateElement(id, { position: { x: startX + dx, y: startY + dy } });
+          });
+        } else {
+          updateElement(element.id, { position: { x: dragStartRef.current.elX + dx, y: dragStartRef.current.elY + dy } });
+        }
       }
     };
+
     const onUp = () => {
-      dragStartRef.current = null;
+      if (didMoveRef.current) pushHistory();
       setIsDragging(false);
+      dragStartRef.current = null;
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
-      if (!didMoveRef.current && wasAlreadySelected && !isMultiSelect && (element.type === 'text' || element.type === 'date'))
-        startEditing();
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
-  }, [element, scale, locked, isEditing, selectedIds, isMultiSelect, setSelectedId, addToSelection, removeFromSelection, updateElement, pushHistory, startEditing]);
+  }, [element, scale, locked, isEditing, isMultiSelect, selectedIds, addToSelection, removeFromSelection, setSelectedId, updateElement, pushHistory]);
 
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    if (isEditing) return;
     e.stopPropagation();
-    const t = e.touches[0];
-    setSelectedId(element.id);
-    longPressTimer.current = setTimeout(() => { setCtxMenu({ x: t.clientX, y: t.clientY }); }, 600);
+
+    const wasAlreadySelected = selectedIds.includes(element.id);
+    if (!wasAlreadySelected) setSelectedId(element.id);
     if (locked) return;
+
+    const t = e.touches[0];
     didMoveRef.current = false;
     dragStartRef.current = { mouseX: t.clientX, mouseY: t.clientY, elX: element.position.x, elY: element.position.y };
+
+    const state = useStudioStore.getState();
+    const multiDragStarts = state.selectedIds
+      .filter((id) => !state.lockedIds[id])
+      .map((id) => {
+        const el = state.elements.find((el) => el.id === id);
+        return el ? { id, startX: el.position.x, startY: el.position.y } : null;
+      })
+      .filter(Boolean) as { id: string; startX: number; startY: number }[];
+
+    longPressTimer.current = setTimeout(() => {
+      setCtxMenu({ x: t.clientX, y: t.clientY });
+    }, 600);
+
     const onMove = (ev: TouchEvent) => {
-      if (!dragStartRef.current) return;
-      if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
       const { clientX, clientY } = getClient(ev);
-      if (!didMoveRef.current && Math.abs(clientX - dragStartRef.current.mouseX) < 4 && Math.abs(clientY - dragStartRef.current.mouseY) < 4) return;
-      ev.preventDefault();
-      if (!didMoveRef.current) { pushHistory(); didMoveRef.current = true; setIsDragging(true); }
+      if (!dragStartRef.current) return;
       const dx = (clientX - dragStartRef.current.mouseX) / scale;
       const dy = (clientY - dragStartRef.current.mouseY) / scale;
-      updateElement(element.id, { position: { x: Math.max(0, dragStartRef.current.elX + dx), y: Math.max(0, dragStartRef.current.elY + dy) } });
-      dragStartRef.current = { ...dragStartRef.current, mouseX: clientX, mouseY: clientY, elX: dragStartRef.current.elX + dx, elY: dragStartRef.current.elY + dy };
+      if (!didMoveRef.current && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+        didMoveRef.current = true;
+        setIsDragging(true);
+        if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+      }
+      if (didMoveRef.current) {
+        ev.preventDefault();
+        if (isMultiSelect && multiDragStarts.length > 0) {
+          multiDragStarts.forEach(({ id, startX, startY }) => {
+            updateElement(id, { position: { x: startX + dx, y: startY + dy } });
+          });
+        } else {
+          updateElement(element.id, { position: { x: dragStartRef.current.elX + dx, y: dragStartRef.current.elY + dy } });
+        }
+      }
     };
-    const onEnd = () => {
+
+    const onUp = () => {
       if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
-      dragStartRef.current = null; setIsDragging(false);
+      if (didMoveRef.current) pushHistory();
+      setIsDragging(false);
+      dragStartRef.current = null;
       window.removeEventListener('touchmove', onMove);
-      window.removeEventListener('touchend', onEnd);
+      window.removeEventListener('touchend', onUp);
     };
     window.addEventListener('touchmove', onMove, { passive: false });
-    window.addEventListener('touchend', onEnd);
-  }, [element, scale, locked, setSelectedId, updateElement, pushHistory]);
+    window.addEventListener('touchend', onUp);
+  }, [element, scale, locked, isEditing, isMultiSelect, selectedIds, setSelectedId, updateElement, pushHistory]);
 
-  const startResize = useCallback((clientX: number, clientY: number, handle: ResizeHandle) => {
-    if (locked) return;
-    pushHistory();
+  const startResize = useCallback((handle: ResizeHandle, startX: number, startY: number) => {
     resizeRef.current = {
-      handle, startMouseX: clientX, startMouseY: clientY,
+      handle, startMouseX: startX, startMouseY: startY,
       startX: element.position.x, startY: element.position.y,
       startW: element.size.width, startH: element.size.height,
     };
-    const applyResize = (cx: number, cy: number) => {
-      if (!resizeRef.current) return;
-      const r = resizeRef.current;
-      const dx = (cx - r.startMouseX) / scale;
-      const dy = (cy - r.startMouseY) / scale;
-      let newX = r.startX, newY = r.startY, newW = r.startW, newH = r.startH;
-      if (handle.includes('e')) newW = Math.max(MIN_SIZE, r.startW + dx);
-      if (handle.includes('s')) newH = Math.max(MIN_SIZE, r.startH + dy);
-      if (handle.includes('w')) { newW = Math.max(MIN_SIZE, r.startW - dx); newX = r.startX + r.startW - newW; }
-      if (handle.includes('n')) { newH = Math.max(MIN_SIZE, r.startH - dy); newY = r.startY + r.startH - newH; }
-      updateElement(element.id, { position: { x: newX, y: newY }, size: { width: newW, height: newH } });
-    };
-    const onMouseMove = (ev: MouseEvent) => applyResize(ev.clientX, ev.clientY);
-    const onTouchMove = (ev: TouchEvent) => { ev.preventDefault(); applyResize(ev.touches[0].clientX, ev.touches[0].clientY); };
-    const onUp = () => {
-      resizeRef.current = null;
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onUp);
-      window.removeEventListener('touchmove', onTouchMove);
-      window.removeEventListener('touchend', onUp);
-    };
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onUp);
-    window.addEventListener('touchmove', onTouchMove, { passive: false });
-    window.addEventListener('touchend', onUp);
-  }, [element, scale, locked, updateElement, pushHistory]);
 
-  const handleResizeDispatch = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    e.stopPropagation(); e.preventDefault();
-    const handle = e.currentTarget.dataset.handle as ResizeHandle;
-    if (handle) startResize(e.clientX, e.clientY, handle);
-  }, [startResize]);
-
-  const handleResizeTouchDispatch = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
-    e.stopPropagation(); e.preventDefault();
-    const handle = e.currentTarget.dataset.handle as ResizeHandle;
-    if (handle) startResize(e.touches[0].clientX, e.touches[0].clientY, handle);
-  }, [startResize]);
-
-  const startRotate = useCallback((clientX: number, clientY: number) => {
-    if (locked) return;
-    pushHistory();
-    const canvas = document.querySelector('[data-pdf-canvas]') as HTMLElement | null;
-    const canvasRect = canvas?.getBoundingClientRect();
-    const cx = (element.position.x + element.size.width / 2) * scale + (canvasRect?.left ?? 0);
-    const cy = (element.position.y + element.size.height / 2) * scale + (canvasRect?.top ?? 0);
-    const startAngle = Math.atan2(clientY - cy, clientX - cx) * (180 / Math.PI);
-    const startRotation = element.rotation ?? 0;
     const onMove = (ev: MouseEvent | TouchEvent) => {
-      const { clientX: mx, clientY: my } = getClient(ev);
-      const angle = Math.atan2(my - cy, mx - cx) * (180 / Math.PI);
-      let delta = angle - startAngle;
-      if ((ev as MouseEvent).shiftKey) delta = Math.round(delta / 15) * 15;
-      updateElement(element.id, { rotation: ((startRotation + delta) % 360 + 360) % 360 });
+      if (!resizeRef.current) return;
+      const { clientX, clientY } = getClient(ev);
+      const { handle, startMouseX, startMouseY, startX, startY, startW, startH } = resizeRef.current;
+      const rawDx = (clientX - startMouseX) / scale;
+      const rawDy = (clientY - startMouseY) / scale;
+
+      let nx = startX, ny = startY, nw = startW, nh = startH;
+      if (handle.includes('e')) { nw = Math.max(MIN_SIZE, startW + rawDx); }
+      if (handle.includes('w')) { const dw = Math.min(rawDx, startW - MIN_SIZE); nx = startX + dw; nw = startW - dw; }
+      if (handle.includes('s')) { nh = Math.max(MIN_SIZE, startH + rawDy); }
+      if (handle.includes('n')) { const dh = Math.min(rawDy, startH - MIN_SIZE); ny = startY + dh; nh = startH - dh; }
+
+      updateElement(element.id, { position: { x: nx, y: ny }, size: { width: nw, height: nh } });
     };
+
     const onUp = () => {
+      pushHistory();
+      resizeRef.current = null;
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
       window.removeEventListener('touchmove', onMove);
       window.removeEventListener('touchend', onUp);
     };
+
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
     window.addEventListener('touchmove', onMove, { passive: false });
     window.addEventListener('touchend', onUp);
-  }, [element, scale, locked, updateElement, pushHistory]);
+  }, [element, scale, updateElement, pushHistory]);
+
+  const handleResizeDispatch = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation(); e.preventDefault();
+    const handle = (e.currentTarget as HTMLElement).dataset.handle as ResizeHandle;
+    startResize(handle, e.clientX, e.clientY);
+  }, [startResize]);
+
+  const handleResizeTouchDispatch = useCallback((e: React.TouchEvent) => {
+    e.stopPropagation(); e.preventDefault();
+    const handle = (e.currentTarget as HTMLElement).dataset.handle as ResizeHandle;
+    startResize(handle, e.touches[0].clientX, e.touches[0].clientY);
+  }, [startResize]);
+
+  const startRotate = useCallback((startX: number, startY: number) => {
+    const el = document.querySelector(`[data-element-id="${element.id}"]`) as HTMLElement | null;
+    const rect = el?.getBoundingClientRect();
+    if (!rect) return;
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const startAngle = Math.atan2(startY - cy, startX - cx) * (180 / Math.PI);
+    const startRotation = element.rotation ?? 0;
+
+    const onMove = (ev: MouseEvent | TouchEvent) => {
+      const { clientX, clientY } = getClient(ev);
+      const angle = Math.atan2(clientY - cy, clientX - cx) * (180 / Math.PI);
+      let newRot = startRotation + (angle - startAngle);
+      if ((ev as MouseEvent | TouchEvent & { shiftKey?: boolean }).shiftKey ?? false) {
+        newRot = Math.round(newRot / 15) * 15;
+      }
+      updateElement(element.id, { rotation: ((newRot % 360) + 360) % 360 });
+    };
+
+    const onUp = () => {
+      pushHistory();
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onUp);
+    };
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    window.addEventListener('touchmove', onMove, { passive: false });
+    window.addEventListener('touchend', onUp);
+  }, [element, updateElement, pushHistory]);
 
   const handleRotateMouseDown = useCallback((e: React.MouseEvent) => {
     e.stopPropagation(); e.preventDefault();
@@ -351,12 +393,17 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
 
   return (
     <>
-      <div
+      {/* Element wrapper — animate on mount (scale in from center) */}
+      <motion.div
+        data-element-id={element.id}
         onMouseDown={handleMouseDown}
         onDoubleClick={handleDoubleClick}
         onTouchStart={(e) => { handleDoubleTap(e); handleTouchStart(e); }}
         onContextMenu={handleContextMenu}
         className="absolute group"
+        initial={{ scale: 0.88, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ type: 'spring', stiffness: 420, damping: 26, mass: 0.6 }}
         style={{
           left: x, top: y, width: w, height: h,
           transform: rotation ? `rotate(${rotation}deg)` : undefined,
@@ -376,7 +423,6 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
             hasFill={element.hasFill} hasStroke={element.hasStroke} strokeStyle={element.strokeStyle}
             strokeWidth={element.strokeWidth} width={w} height={h} />
         )}
-
 
         {(element.type === 'text' || element.type === 'date') && (
           isEditing ? (
@@ -402,158 +448,198 @@ export function ElementOverlay({ element, scale }: ElementOverlayProps) {
           )
         )}
 
-        <div className="absolute inset-0 rounded pointer-events-none transition-all"
-          style={{ outline: isSelected ? `${outlineStyle} ${outlineColor}` : '1.5px solid transparent', outlineOffset: 0 }} />
+        {/* Selection ring — animated opacity */}
+        <motion.div
+          className="absolute inset-0 rounded pointer-events-none"
+          animate={{
+            opacity: isSelected ? 1 : 0,
+            outline: isSelected ? `${outlineStyle} ${outlineColor}` : '1.5px solid transparent',
+          }}
+          transition={{ duration: 0.12 }}
+          style={{ outlineOffset: 0 }}
+        />
+        {/* Hover ring */}
         {!isSelected && (
-          <div className="absolute inset-0 rounded pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity"
+          <div className="absolute inset-0 rounded pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-150"
             style={{ outline: `1.5px solid ${locked ? '#F59E0B' : 'var(--color-primary)'}`, outlineOffset: 0 }} />
         )}
 
         {locked && (
-          <div className="absolute -top-2 -right-2 w-5 h-5 rounded-full flex items-center justify-center z-50 pointer-events-none"
-            style={{ background: '#F59E0B' }}>
+          <motion.div
+            initial={{ scale: 0 }} animate={{ scale: 1 }}
+            transition={{ type: 'spring', stiffness: 500, damping: 22 }}
+            className="absolute -top-2 -right-2 w-5 h-5 rounded-full flex items-center justify-center z-50 pointer-events-none"
+            style={{ background: '#F59E0B' }}
+          >
             <Lock className="w-2.5 h-2.5 text-white" />
-          </div>
+          </motion.div>
         )}
 
-        {isPrimary && (
-          <div
-            className="absolute -top-10 left-0 flex items-center gap-1 px-1.5 py-1 z-50"
-            style={{ background: 'var(--color-background)', border: '1px solid var(--color-border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', whiteSpace: 'nowrap' }}
+        {/* Floating toolbar — slide down from above */}
+        <AnimatePresence>
+          {isPrimary && (
+            <motion.div
+              initial={{ opacity: 0, y: -6, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -4, scale: 0.96 }}
+              transition={{ type: 'spring', stiffness: 400, damping: 28, mass: 0.5 }}
+              className="absolute -top-10 left-0 flex items-center gap-1 px-1.5 py-1 z-50"
+              style={{ background: 'var(--color-background)', border: '1px solid var(--color-border)', borderRadius: 8, boxShadow: 'var(--shadow-md)', whiteSpace: 'nowrap' }}
+              onMouseDown={(e) => e.stopPropagation()}
+              onTouchStart={(e) => e.stopPropagation()}
+            >
+              <GripHorizontal className="w-3.5 h-3.5" style={{ color: 'var(--color-text-disabled)' }} />
+              <div className="w-px h-3.5" style={{ background: 'var(--color-border)' }} />
+              {isMultiSelect ? (
+                <>
+                  <span className="text-xs px-1" style={{ color: 'var(--color-text-secondary)' }}>
+                    {selectedIds.length} selected
+                  </span>
+                  <div className="w-px h-3.5" style={{ background: 'var(--color-border)' }} />
+                  <FBtn icon={Clipboard} title="Duplicate all (⌘D)" onClick={() => duplicateSelectedElements()} />
+                  <div className="w-px h-3.5" style={{ background: 'var(--color-border)' }} />
+                  <FBtn icon={Trash2} title="Delete all" onClick={() => deleteSelectedElements()} danger />
+                </>
+              ) : (
+                <>
+                  <FBtn icon={locked ? Unlock : Lock} title={locked ? 'Unlock' : 'Lock'}
+                    onClick={() => toggleLock(element.id)}
+                    iconStyle={{ color: locked ? '#F59E0B' : 'var(--color-text-secondary)' }} />
+                  <FBtn icon={Copy} title="Copy (⌘C)" onClick={() => copyElement(element.id)} />
+                  {!locked && (
+                    <>
+                      <FBtn icon={Scissors} title="Cut (⌘X)" onClick={() => cutElement(element.id)} />
+                      <FBtn icon={Clipboard} title="Duplicate (⌘D)" onClick={() => duplicateElement(element.id)} />
+                      <div className="w-px h-3.5" style={{ background: 'var(--color-border)' }} />
+                      <FBtn
+                        icon={RotateCw}
+                        title={`Rotate · drag handle at bottom-right · Shift=15° snap · current: ${Math.round(rotation)}°`}
+                        onClick={() => updateElement(element.id, { rotation: ((rotation + 15) % 360) })}
+                        iconStyle={{ color: rotation !== 0 ? 'var(--color-primary)' : 'var(--color-text-secondary)' }}
+                      />
+                    </>
+                  )}
+                  <div className="w-px h-3.5" style={{ background: 'var(--color-border)' }} />
+                  <FBtn icon={Trash2} title="Delete" onClick={() => deleteElement(element.id)} danger />
+                </>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Resize handles — pop in */}
+        <AnimatePresence>
+          {isPrimary && !locked && !isMultiSelect && handles.map((handle) => (
+            <motion.div
+              key={handle}
+              data-handle={handle}
+              onMouseDown={handleResizeDispatch}
+              onTouchStart={handleResizeTouchDispatch}
+              initial={{ scale: 0, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 500, damping: 24, mass: 0.4 }}
+              className="absolute z-50"
+              style={{ ...handlePos[handle], width: 12, height: 12, background: '#fff', border: '2px solid var(--color-primary)', borderRadius: 3, touchAction: 'none' }}
+            />
+          ))}
+        </AnimatePresence>
+
+        {/* Rotate handle */}
+        <AnimatePresence>
+          {isPrimary && !locked && !isMultiSelect && (
+            <motion.div
+              onMouseDown={handleRotateMouseDown}
+              onTouchStart={handleRotateTouchStart}
+              initial={{ scale: 0, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 500, damping: 24, mass: 0.4 }}
+              className="absolute z-50 flex items-center justify-center"
+              title="Drag to rotate · Shift = snap 15°"
+              style={{
+                bottom: -24, right: -24,
+                width: 20, height: 20,
+                background: '#fff',
+                border: '2px solid var(--color-primary)',
+                borderRadius: '50%',
+                cursor: 'crosshair',
+                touchAction: 'none',
+                boxShadow: 'var(--shadow-md)',
+              }}
+            >
+              <RotateCw className="w-2.5 h-2.5" style={{ color: 'var(--color-primary)' }} />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Rotation badge */}
+        <AnimatePresence>
+          {isPrimary && !isMultiSelect && rotation !== 0 && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              transition={{ duration: 0.15 }}
+              className="absolute pointer-events-none z-50"
+              style={{
+                bottom: -22, left: '50%', transform: 'translateX(-50%)',
+                background: 'var(--color-primary)', color: '#fff',
+                fontSize: 9, fontWeight: 600,
+                padding: '1px 5px', borderRadius: 4, whiteSpace: 'nowrap',
+              }}
+            >
+              {Math.round(rotation)}°
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
+
+      {/* Context menu — fade + scale in */}
+      <AnimatePresence>
+        {ctxMenu && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.94, y: -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.94, y: -4 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+            className="fixed z-[200] py-1 min-w-[180px]"
+            style={{
+              left: Math.min(ctxMenu.x, window.innerWidth - 190),
+              top: Math.min(ctxMenu.y, window.innerHeight - 280),
+              background: 'var(--color-background)',
+              border: '1px solid var(--color-border)',
+              borderRadius: 'var(--radius-dropdown)',
+              boxShadow: 'var(--shadow-md)',
+              transformOrigin: 'top left',
+            }}
+            onClick={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
             onTouchStart={(e) => e.stopPropagation()}
           >
-            <GripHorizontal className="w-3.5 h-3.5" style={{ color: 'var(--color-text-disabled)' }} />
-            <div className="w-px h-3.5" style={{ background: 'var(--color-border)' }} />
-            {isMultiSelect ? (
-              <>
-                <span className="text-xs px-1" style={{ color: 'var(--color-text-secondary)' }}>
-                  {selectedIds.length} selected
-                </span>
-                <div className="w-px h-3.5" style={{ background: 'var(--color-border)' }} />
-                <FBtn icon={Clipboard} title="Duplicate all (⌘D)" onClick={() => duplicateSelectedElements()} />
-                <div className="w-px h-3.5" style={{ background: 'var(--color-border)' }} />
-                <FBtn icon={Trash2} title="Delete all" onClick={() => deleteSelectedElements()} danger />
-              </>
-            ) : (
-              <>
-                <FBtn icon={locked ? Unlock : Lock} title={locked ? 'Unlock' : 'Lock'}
-                  onClick={() => toggleLock(element.id)}
-                  iconStyle={{ color: locked ? '#F59E0B' : 'var(--color-text-secondary)' }} />
-                <FBtn icon={Copy} title="Copy (⌘C)" onClick={() => copyElement(element.id)} />
-                {!locked && (
-                  <>
-                    <FBtn icon={Scissors} title="Cut (⌘X)" onClick={() => cutElement(element.id)} />
-                    <FBtn icon={Clipboard} title="Duplicate (⌘D)" onClick={() => duplicateElement(element.id)} />
-                    {/* Rotate button di toolbar, setelah duplicate */}
-                    <div className="w-px h-3.5" style={{ background: 'var(--color-border)' }} />
-                    <FBtn
-                      icon={RotateCw}
-                      title={`Rotate · drag handle at bottom-right · Shift=15° snap · current: ${Math.round(rotation)}°`}
-                      onClick={() => updateElement(element.id, { rotation: ((rotation + 15) % 360) })}
-                      iconStyle={{ color: rotation !== 0 ? 'var(--color-primary)' : 'var(--color-text-secondary)' }}
-                    />
-                  </>
-                )}
-                <div className="w-px h-3.5" style={{ background: 'var(--color-border)' }} />
-                <FBtn icon={Trash2} title="Delete" onClick={() => deleteElement(element.id)} danger />
-              </>
-            )}
-          </div>
-        )}
-
-        {/* Resize handles */}
-        {isPrimary && !locked && !isMultiSelect && handles.map((handle) => (
-          <div key={handle} data-handle={handle}
-            onMouseDown={handleResizeDispatch}
-            onTouchStart={handleResizeTouchDispatch}
-            className="absolute z-50"
-            style={{ ...handlePos[handle], width: 12, height: 12, background: '#fff', border: '2px solid var(--color-primary)', borderRadius: 3, touchAction: 'none' }} />
-        ))}
-
-        {/* Rotate handle — pojok kanan bawah, tidak overlap toolbar */}
-        {isPrimary && !locked && !isMultiSelect && (
-          <div
-            onMouseDown={handleRotateMouseDown}
-            onTouchStart={handleRotateTouchStart}
-            className="absolute z-50 flex items-center justify-center"
-            title="Drag to rotate · Shift = snap 15°"
-            style={{
-              bottom: -24,
-              right: -24,
-              width: 20,
-              height: 20,
-              background: '#fff',
-              border: '2px solid var(--color-primary)',
-              borderRadius: '50%',
-              cursor: 'crosshair',
-              touchAction: 'none',
-              boxShadow: 'var(--shadow-md)',
-            }}
-          >
-            <RotateCw className="w-2.5 h-2.5" style={{ color: 'var(--color-primary)' }} />
-          </div>
-        )}
-
-        {/* Rotation badge */}
-        {isPrimary && !isMultiSelect && rotation !== 0 && (
-          <div
-            className="absolute pointer-events-none z-50"
-            style={{
-              bottom: -22,
-              left: '50%',
-              transform: 'translateX(-50%)',
-              background: 'var(--color-primary)',
-              color: '#fff',
-              fontSize: 9,
-              fontWeight: 600,
-              padding: '1px 5px',
-              borderRadius: 4,
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {Math.round(rotation)}°
-          </div>
-        )}
-      </div>
-
-      {ctxMenu && (
-        <div
-          className="fixed z-[200] py-1 min-w-[180px]"
-          style={{
-            left: Math.min(ctxMenu.x, window.innerWidth - 190),
-            top: Math.min(ctxMenu.y, window.innerHeight - 280),
-            background: 'var(--color-background)',
-            border: '1px solid var(--color-border)',
-            borderRadius: 'var(--radius-dropdown)',
-            boxShadow: 'var(--shadow-md)',
-          }}
-          onClick={(e) => e.stopPropagation()}
-          onMouseDown={(e) => e.stopPropagation()}
-          onTouchStart={(e) => e.stopPropagation()}
-        >
-          {ctxItems.map(({ label, shortcut, icon: Icon, onClick, disabled }) => (
-            <button key={label} onClick={onClick} disabled={disabled}
+            {ctxItems.map(({ label, shortcut, icon: Icon, onClick, disabled }) => (
+              <button key={label} onClick={onClick} disabled={disabled}
+                className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm transition-colors"
+                style={{ color: 'var(--color-text-primary)', opacity: disabled ? 0.4 : 1, cursor: disabled ? 'not-allowed' : 'pointer' }}
+                onMouseEnter={(e) => { if (!disabled) (e.currentTarget as HTMLElement).style.background = 'var(--color-surface)'; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
+                <Icon className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--color-text-secondary)' }} />
+                <span className="flex-1 text-left">{label}</span>
+                {shortcut && <span className="text-xs hidden sm:inline" style={{ color: 'var(--color-text-disabled)' }}>{shortcut}</span>}
+              </button>
+            ))}
+            <div className="my-1" style={{ height: 1, background: 'var(--color-border)' }} />
+            <button onClick={() => { deleteElement(element.id); setCtxMenu(null); }}
               className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm transition-colors"
-              style={{ color: 'var(--color-text-primary)', opacity: disabled ? 0.4 : 1, cursor: disabled ? 'not-allowed' : 'pointer' }}
-              onMouseEnter={(e) => { if (!disabled) (e.currentTarget as HTMLElement).style.background = 'var(--color-surface)'; }}
+              style={{ color: 'var(--color-danger)', cursor: 'pointer' }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = '#FEF2F2'; }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
-              <Icon className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--color-text-secondary)' }} />
-              <span className="flex-1 text-left">{label}</span>
-              {shortcut && <span className="text-xs hidden sm:inline" style={{ color: 'var(--color-text-disabled)' }}>{shortcut}</span>}
+              <Trash2 className="w-3.5 h-3.5 shrink-0" />
+              <span>Delete</span>
             </button>
-          ))}
-          <div className="my-1" style={{ height: 1, background: 'var(--color-border)' }} />
-          <button onClick={() => { deleteElement(element.id); setCtxMenu(null); }}
-            className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm transition-colors"
-            style={{ color: 'var(--color-danger)', cursor: 'pointer' }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = '#FEF2F2'; }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent'; }}>
-            <Trash2 className="w-3.5 h-3.5 shrink-0" />
-            <span>Delete</span>
-          </button>
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   );
 }
@@ -563,10 +649,11 @@ function FBtn({ icon: Icon, title, onClick, danger, iconStyle }: {
   title: string; onClick: () => void; danger?: boolean; iconStyle?: React.CSSProperties;
 }) {
   return (
-    <button
+    <motion.button
       onClick={(e) => { e.stopPropagation(); onClick(); }}
       onTouchEnd={(e) => { e.stopPropagation(); e.preventDefault(); onClick(); }}
       title={title}
+      whileTap={{ scale: 0.82 }}
       className="p-1.5 rounded transition-colors"
       style={{ background: 'transparent', WebkitTapHighlightColor: 'transparent' }}
       onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = danger ? '#FEF2F2' : 'var(--color-surface)'; }}
@@ -574,6 +661,6 @@ function FBtn({ icon: Icon, title, onClick, danger, iconStyle }: {
     >
       <Icon className="w-3.5 h-3.5"
         style={{ color: danger ? 'var(--color-danger)' : 'var(--color-text-secondary)', ...iconStyle }} />
-    </button>
+    </motion.button>
   );
 }

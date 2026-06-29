@@ -191,6 +191,8 @@ export function MobilePropertiesSheet() {
             maxHeight: '85vh',
           }}
         >
+          <Drawer.Title className="sr-only">{elementLabel} Properties</Drawer.Title>
+
           {/* Drag handle */}
           <div className="flex justify-center pt-3 pb-1 shrink-0">
             <Drawer.Handle

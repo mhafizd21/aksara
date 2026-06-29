@@ -237,10 +237,10 @@ export function PdfCanvas() {
     setCtxMenu({ x: e.clientX, y: e.clientY, elX: pdfX, elY: pdfY });
   }, [getCanvasCoords]);
 
-  const getTouchDist = (a: React.Touch, b: React.Touch) =>
+  const getTouchDist = (a: Touch, b: Touch) =>
     Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
 
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+  const handleTouchStart = useCallback((e: TouchEvent) => {
     if (e.touches.length === 2) {
       isPinchingRef.current = true;
       if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
@@ -252,7 +252,6 @@ export function PdfCanvas() {
     const t = e.touches[0];
     const onElement = !!(e.target as HTMLElement).closest('[data-element-overlay]');
 
-    // Track touch start info for tap-to-unselect detection
     touchStartRef.current = {
       x: t.clientX,
       y: t.clientY,
@@ -279,7 +278,7 @@ export function PdfCanvas() {
     }, 600);
   }, [isPlacingGhost, scale, currentPage, getCanvasCoords, isHorizontallyOverflowing]);
 
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+  const handleTouchMove = useCallback((e: TouchEvent) => {
     if (e.touches.length === 2 && pinchRef.current) {
       e.preventDefault();
       const newDist = getTouchDist(e.touches[0], e.touches[1]);
@@ -314,16 +313,18 @@ export function PdfCanvas() {
     }
   }, [isPlacingGhost, setScale, pdfDoc, getCanvasCoords, isHorizontallyOverflowing]);
 
-  const handleTouchEnd = useCallback((e: React.TouchEvent) => {
+  const handleTouchEnd = useCallback((e: TouchEvent) => {
     if (longPressTimer.current) { clearTimeout(longPressTimer.current); longPressTimer.current = null; }
+
+    const wasPinching = isPinchingRef.current;
 
     if (e.touches.length < 2) {
       pinchRef.current = null;
-      setTimeout(() => { isPinchingRef.current = false; }, 100);
+      isPinchingRef.current = false;
     }
 
-    // Detect tap on canvas background → unselect
-    if (touchStartRef.current && !touchStartRef.current.onElement && !isPinchingRef.current) {
+    // Tap on canvas background → unselect
+    if (touchStartRef.current && !touchStartRef.current.onElement && !wasPinching) {
       const touch = e.changedTouches[0];
       const dx = Math.abs(touch.clientX - touchStartRef.current.x);
       const dy = Math.abs(touch.clientY - touchStartRef.current.y);
@@ -336,7 +337,7 @@ export function PdfCanvas() {
     }
     touchStartRef.current = null;
 
-    if (swipeRef.current && pdfDoc && !isPinchingRef.current) {
+    if (swipeRef.current && pdfDoc && !wasPinching) {
       const dx = swipeOffset;
       const threshold = 60;
       if (dx < -threshold && currentPage < pdfDoc.numPages - 1) {
@@ -348,13 +349,27 @@ export function PdfCanvas() {
       swipeRef.current = null;
     }
 
-    if (isPlacingSignature && containerRef.current && !isPinchingRef.current) {
+    if (isPlacingSignature && containerRef.current && !wasPinching) {
       const t = e.changedTouches[0];
       const { pdfX, pdfY } = getCanvasCoords(t.clientX, t.clientY);
       placeSignatureAtPosition(currentPage, pdfX, pdfY);
       setGhostPos(null);
     }
   }, [isPlacingSignature, isPlacingGhost, currentPage, pdfDoc, swipeOffset, clearSelection, setCurrentPage, placeSignatureAtPosition, getCanvasCoords]);
+
+  // Native touch listeners — must come after all handlers are declared
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    el.addEventListener('touchstart', handleTouchStart as unknown as EventListener, { passive: false });
+    el.addEventListener('touchmove', handleTouchMove as unknown as EventListener, { passive: false });
+    el.addEventListener('touchend', handleTouchEnd as unknown as EventListener, { passive: false });
+    return () => {
+      el.removeEventListener('touchstart', handleTouchStart as unknown as EventListener);
+      el.removeEventListener('touchmove', handleTouchMove as unknown as EventListener);
+      el.removeEventListener('touchend', handleTouchEnd as unknown as EventListener);
+    };
+  }, [handleTouchStart, handleTouchMove, handleTouchEnd]);
 
   const pageElements = elements.filter((el) => el.pageIndex === currentPage);
 
@@ -411,16 +426,13 @@ export function PdfCanvas() {
           onContextMenu={handleContextMenu}
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
           className="relative select-none inline-block mx-auto"
           style={{
             cursor,
             background: '#fff',
             boxShadow: '0 4px 24px 0 rgb(0 0 0 / 0.10), 0 1px 4px 0 rgb(0 0 0 / 0.06)',
             borderRadius: 2,
-            touchAction: isPlacingGhost ? 'none' : 'pan-x pan-y',
+            touchAction: 'none',
             transform: swipeOffset ? `translateX(${Math.max(-40, Math.min(40, swipeOffset * 0.3))}px)` : undefined,
             transition: swipeOffset === 0 ? 'transform 0.2s ease' : undefined,
           }}

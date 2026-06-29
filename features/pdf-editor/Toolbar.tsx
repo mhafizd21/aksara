@@ -6,6 +6,7 @@ import {
   Download, Loader2, ChevronLeft, ChevronRight, X,
   FileEdit, Check, Circle, Star, Shapes, Square, Minus,
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '@/lib/utils';
 import { useStudioStore } from '@/stores/studio.store';
 import { usePdfLoader } from '@/hooks/usePdfLoader';
@@ -92,20 +93,28 @@ export function Toolbar() {
         <ToolBtn icon={loading ? Loader2 : Upload} label="Upload" onClick={() => fileInputRef.current?.click()} loading={loading} variant="secondary" />
 
         {/* Placement banner */}
-        {isPlacing && (
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg ml-1"
-            style={{ background: '#EEF2FF', border: '1px solid #C7D2FE' }}>
-            <span className="text-xs font-medium hidden sm:block" style={{ color: 'var(--color-primary)' }}>
-              Ketuk PDF untuk menempatkan tanda tangan
-            </span>
-            <span className="text-xs font-medium sm:hidden" style={{ color: 'var(--color-primary)' }}>
-              Ketuk untuk menempatkan
-            </span>
-            <button onClick={cancelSignaturePlacement} className="p-0.5 rounded hover:bg-indigo-100 transition-colors">
-              <X className="w-3.5 h-3.5" style={{ color: 'var(--color-primary)' }} />
-            </button>
-          </div>
-        )}
+        <AnimatePresence>
+          {isPlacing && (
+            <motion.div
+              initial={{ opacity: 0, x: -8 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -8 }}
+              transition={{ type: 'spring', stiffness: 380, damping: 28 }}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg ml-1"
+              style={{ background: '#EEF2FF', border: '1px solid #C7D2FE' }}
+            >
+              <span className="text-xs font-medium hidden sm:block" style={{ color: 'var(--color-primary)' }}>
+                Ketuk PDF untuk menempatkan tanda tangan
+              </span>
+              <span className="text-xs font-medium sm:hidden" style={{ color: 'var(--color-primary)' }}>
+                Ketuk untuk menempatkan
+              </span>
+              <button onClick={cancelSignaturePlacement} className="p-0.5 rounded hover:bg-indigo-100 transition-colors">
+                <X className="w-3.5 h-3.5" style={{ color: 'var(--color-primary)' }} />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Desktop tools */}
         {!isPlacing && (
@@ -120,45 +129,55 @@ export function Toolbar() {
               active={activeToolMode === 'symbol'}
               onClick={() => setSymbolPickerOpen((v) => !v)} />
 
-            {symbolPickerOpen && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setSymbolPickerOpen(false)} />
-                <div className="absolute top-full left-0 mt-2 z-50 p-3 rounded-xl"
-                  style={{ background: 'var(--color-background)', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-md)', width: 220 }}
-                  onClick={(e) => e.stopPropagation()}>
-                  <p className="label mb-2">Bentuk simbol</p>
-                  <div className="grid grid-cols-3 gap-1.5 mb-3">
-                    {SYMBOL_SHAPES.map((shape) => {
-                      const Icon = SYMBOL_ICONS[shape];
-                      return (
-                        <button key={shape} onClick={() => pickSymbol(shape)}
-                          title={shape}
-                          className="flex items-center justify-center h-9 rounded-lg transition-colors"
-                          style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
-                          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = '#EEF2FF'; }}
-                          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--color-surface)'; }}>
-                          <Icon className="w-4 h-4" style={{ color: SYMBOL_SHAPE_DEFAULTS[shape].strokeColor }} />
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <p className="label mb-2">Warna</p>
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {SYMBOL_PRESET_COLORS.filter((c) => c !== 'transparent').map((c) => (
-                      <button key={c} onClick={() => setSelectedSymbolStrokeColor(c)}
-                        className="w-6 h-6 rounded-full shrink-0"
-                        style={{ background: c, border: selectedSymbolStrokeColor === c ? '2px solid var(--color-primary)' : '1px solid var(--color-border)' }} />
-                    ))}
-                    <input type="color" value={selectedSymbolStrokeColor}
-                      onChange={(e) => setSelectedSymbolStrokeColor(e.target.value)}
-                      className="w-6 h-6 rounded-full cursor-pointer shrink-0" />
-                  </div>
-                  <p className="text-xs mt-2" style={{ color: 'var(--color-text-secondary)' }}>
-                    Atur fill, gaya &amp; ketebalan dari panel Properti setelah menempatkan.
-                  </p>
-                </div>
-              </>
-            )}
+            <AnimatePresence>
+              {symbolPickerOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setSymbolPickerOpen(false)} />
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.94, y: -6 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.94, y: -6 }}
+                    transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+                    className="absolute top-full left-0 mt-2 z-50 p-3 rounded-xl"
+                    style={{ background: 'var(--color-background)', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-md)', width: 220, transformOrigin: 'top left' }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <p className="label mb-2">Bentuk simbol</p>
+                    <div className="grid grid-cols-3 gap-1.5 mb-3">
+                      {SYMBOL_SHAPES.map((shape) => {
+                        const Icon = SYMBOL_ICONS[shape];
+                        return (
+                          <motion.button key={shape} onClick={() => pickSymbol(shape)}
+                            whileTap={{ scale: 0.88 }}
+                            title={shape}
+                            className="flex items-center justify-center h-9 rounded-lg transition-colors"
+                            style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+                            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = '#EEF2FF'; }}
+                            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--color-surface)'; }}>
+                            <Icon className="w-4 h-4" style={{ color: SYMBOL_SHAPE_DEFAULTS[shape].strokeColor }} />
+                          </motion.button>
+                        );
+                      })}
+                    </div>
+                    <p className="label mb-2">Warna</p>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {SYMBOL_PRESET_COLORS.filter((c) => c !== 'transparent').map((c) => (
+                        <motion.button key={c} onClick={() => setSelectedSymbolStrokeColor(c)}
+                          whileTap={{ scale: 0.85 }}
+                          className="w-6 h-6 rounded-full shrink-0"
+                          style={{ background: c, border: selectedSymbolStrokeColor === c ? '2px solid var(--color-primary)' : '1px solid var(--color-border)' }} />
+                      ))}
+                      <input type="color" value={selectedSymbolStrokeColor}
+                        onChange={(e) => setSelectedSymbolStrokeColor(e.target.value)}
+                        className="w-6 h-6 rounded-full cursor-pointer shrink-0" />
+                    </div>
+                    <p className="text-xs mt-2" style={{ color: 'var(--color-text-secondary)' }}>
+                      Atur fill, gaya &amp; ketebalan dari panel Properti setelah menempatkan.
+                    </p>
+                  </motion.div>
+                </>
+              )}
+            </AnimatePresence>
           </div>
         )}
 
@@ -190,7 +209,7 @@ export function Toolbar() {
 
         {error && <span className="text-xs truncate max-w-[120px] hidden lg:block" style={{ color: 'var(--color-danger)' }}>{error}</span>}
 
-        {/* Mobile Undo/Redo — in header, right side */}
+        {/* Mobile Undo/Redo */}
         {pdfDoc && (
           <div className="flex md:hidden items-center gap-1">
             <ToolBtn icon={Undo2} label="Undo" disabled={!canUndo} onClick={undo} iconOnly />
@@ -225,20 +244,24 @@ export function Toolbar() {
 
         <div className="w-px h-5 shrink-0 hidden sm:block" style={{ background: 'var(--color-border)' }} />
 
-        {/* Download button — visible on all screen sizes */}
-        <button onClick={exportPdf} disabled={!pdfDoc || isExporting}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all shrink-0"
+        {/* Download button */}
+        <motion.button
+          onClick={exportPdf}
+          disabled={!pdfDoc || isExporting}
+          whileTap={pdfDoc && !isExporting ? { scale: 0.94 } : {}}
+          className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors shrink-0"
           style={!pdfDoc || isExporting
             ? { background: 'var(--color-surface)', color: 'var(--color-text-disabled)', cursor: 'not-allowed', border: '1px solid var(--color-border)' }
             : { background: 'var(--color-primary)', color: '#fff', boxShadow: 'var(--shadow-sm)' }}
           onMouseEnter={(e) => { if (pdfDoc && !isExporting) (e.currentTarget as HTMLElement).style.background = 'var(--color-primary-hover)'; }}
-          onMouseLeave={(e) => { if (pdfDoc && !isExporting) (e.currentTarget as HTMLElement).style.background = 'var(--color-primary)'; }}>
+          onMouseLeave={(e) => { if (pdfDoc && !isExporting) (e.currentTarget as HTMLElement).style.background = 'var(--color-primary)'; }}
+        >
           {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
           <span>{isExporting ? 'Menyimpan…' : 'Unduh'}</span>
-        </button>
+        </motion.button>
       </header>
 
-      {/* ── MOBILE BOTTOM ACTION BAR ── only on mobile (md:hidden) */}
+      {/* ── MOBILE BOTTOM ACTION BAR ── */}
       <MobileBottomBar
         pdfDoc={pdfDoc}
         isPlacing={isPlacing}
@@ -263,14 +286,6 @@ export function Toolbar() {
   );
 }
 
-/* ─────────────────────────────────────────────
-   MOBILE BOTTOM ACTION BAR
-   Fixed bottom bar with thumb-friendly big tap targets.
-   Primary row (5 slots, symmetric):
-     Upload | Teks | [Tanda Tangan CTA] | Tanggal | Simbol
-   Secondary row (pagination only):
-     ← | Page X / N | →
-───────────────────────────────────────────── */
 interface MobileBottomBarProps {
   pdfDoc: import('@/types').PdfDocument | null;
   isPlacing: boolean;
@@ -298,7 +313,6 @@ function MobileBottomBar({
   onUpload, onToolClick, onPickSymbol, onToggleSymbolPicker,
   onCloseSymbolPicker, onSetStrokeColor, onPrevPage, onNextPage, onCancelPlacement,
 }: MobileBottomBarProps) {
-
   const UploadIcon = loading ? Loader2 : Upload;
 
   return (
@@ -312,145 +326,128 @@ function MobileBottomBar({
       }}
     >
       {/* Signature placement banner */}
-      {isPlacing && (
-        <div className="flex items-center justify-between px-4 py-2.5"
-          style={{ background: '#EEF2FF', borderBottom: '1px solid #C7D2FE' }}>
-          <span className="text-sm font-medium" style={{ color: 'var(--color-primary)' }}>
-            Ketuk PDF untuk menempatkan tanda tangan
-          </span>
-          <button
-            onClick={onCancelPlacement}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium"
-            style={{ background: '#C7D2FE', color: 'var(--color-primary)' }}>
-            <X className="w-3 h-3" />
-            Batal
-          </button>
-        </div>
-      )}
+      <AnimatePresence>
+        {isPlacing && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2 }}
+            className="flex items-center justify-between px-4 py-2.5 overflow-hidden"
+            style={{ background: '#EEF2FF', borderBottom: '1px solid #C7D2FE' }}
+          >
+            <span className="text-sm font-medium" style={{ color: 'var(--color-primary)' }}>
+              Ketuk PDF untuk menempatkan tanda tangan
+            </span>
+            <button
+              onClick={onCancelPlacement}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium"
+              style={{ background: '#C7D2FE', color: 'var(--color-primary)' }}>
+              <X className="w-3 h-3" />
+              Batal
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Symbol picker sheet */}
-      {mobileSymbolPickerOpen && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={onCloseSymbolPicker} />
-          <div className="relative z-50 px-4 pt-3 pb-2"
-            style={{ background: 'var(--color-surface)', borderTop: '1px solid var(--color-border)' }}>
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>Pilih Simbol</p>
-              <button onClick={onCloseSymbolPicker} className="p-1 rounded-lg" style={{ color: 'var(--color-text-secondary)' }}>
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="grid grid-cols-6 gap-2 mb-3">
-              {SYMBOL_SHAPES.map((shape) => {
-                const Icon = SYMBOL_ICONS[shape];
-                const active = activeToolMode === 'symbol' && selectedSymbolShape === shape;
-                return (
-                  <button key={shape} onClick={() => onPickSymbol(shape)}
-                    className="flex flex-col items-center justify-center h-14 rounded-xl gap-1"
-                    style={{
-                      background: active ? '#EEF2FF' : 'var(--color-background)',
-                      border: active ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
-                    }}>
-                    <Icon className="w-5 h-5" style={{ color: SYMBOL_SHAPE_DEFAULTS[shape].strokeColor }} />
-                    <span className="text-[9px] font-medium capitalize" style={{ color: 'var(--color-text-secondary)' }}>{shape}</span>
-                  </button>
-                );
-              })}
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-              {SYMBOL_PRESET_COLORS.filter((c) => c !== 'transparent').map((c) => (
-                <button key={c} onClick={() => onSetStrokeColor(c)}
-                  className="w-7 h-7 rounded-full shrink-0"
-                  style={{ background: c, border: selectedSymbolStrokeColor === c ? '2.5px solid var(--color-primary)' : '1px solid var(--color-border)' }} />
-              ))}
-              <input type="color" value={selectedSymbolStrokeColor}
-                onChange={(e) => onSetStrokeColor(e.target.value)}
-                className="w-7 h-7 rounded-full cursor-pointer shrink-0" />
-            </div>
-          </div>
-        </>
-      )}
+      <AnimatePresence>
+        {mobileSymbolPickerOpen && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={onCloseSymbolPicker} />
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 16 }}
+              transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+              className="relative z-50 px-4 pt-3 pb-2"
+              style={{ background: 'var(--color-surface)', borderTop: '1px solid var(--color-border)' }}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-sm font-semibold" style={{ color: 'var(--color-text-primary)' }}>Pilih Simbol</p>
+                <button onClick={onCloseSymbolPicker} className="p-1 rounded-lg" style={{ color: 'var(--color-text-secondary)' }}>
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="grid grid-cols-6 gap-2 mb-3">
+                {SYMBOL_SHAPES.map((shape, i) => {
+                  const Icon = SYMBOL_ICONS[shape];
+                  const active = activeToolMode === 'symbol' && selectedSymbolShape === shape;
+                  return (
+                    <motion.button
+                      key={shape}
+                      onClick={() => onPickSymbol(shape)}
+                      initial={{ opacity: 0, scale: 0.8 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ delay: i * 0.03, type: 'spring', stiffness: 500, damping: 24 }}
+                      whileTap={{ scale: 0.86 }}
+                      className="flex flex-col items-center justify-center h-14 rounded-xl gap-1"
+                      style={{
+                        background: active ? '#EEF2FF' : 'var(--color-background)',
+                        border: active ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
+                      }}>
+                      <Icon className="w-5 h-5" style={{ color: SYMBOL_SHAPE_DEFAULTS[shape].strokeColor }} />
+                      <span className="text-[9px] font-medium capitalize" style={{ color: 'var(--color-text-secondary)' }}>{shape}</span>
+                    </motion.button>
+                  );
+                })}
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                {SYMBOL_PRESET_COLORS.filter((c) => c !== 'transparent').map((c) => (
+                  <motion.button key={c} onClick={() => onSetStrokeColor(c)}
+                    whileTap={{ scale: 0.82 }}
+                    className="w-7 h-7 rounded-full shrink-0"
+                    style={{ background: c, border: selectedSymbolStrokeColor === c ? '2.5px solid var(--color-primary)' : '1px solid var(--color-border)' }} />
+                ))}
+                <input type="color" value={selectedSymbolStrokeColor}
+                  onChange={(e) => onSetStrokeColor(e.target.value)}
+                  className="w-7 h-7 rounded-full cursor-pointer shrink-0" />
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
-      {/* Pagination row — only when PDF loaded */}
-      {pdfDoc && !isPlacing && (
-        <div
-          className="flex items-center justify-center gap-3 px-4 py-2"
-          style={{ borderBottom: '1px solid var(--color-border)' }}
-        >
-          <button
-            onClick={onPrevPage}
-            disabled={currentPage === 0}
-            className="w-8 h-8 flex items-center justify-center rounded-lg disabled:opacity-30 active:scale-90 transition-all"
-            style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', WebkitTapHighlightColor: 'transparent' }}
+      {/* Pagination row */}
+      <AnimatePresence>
+        {pdfDoc && !isPlacing && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.18 }}
+            className="flex items-center justify-center gap-3 px-4 py-2 overflow-hidden"
+            style={{ borderBottom: '1px solid var(--color-border)' }}
           >
-            <ChevronLeft className="w-4 h-4" style={{ color: 'var(--color-text-primary)' }} />
-          </button>
-          <span className="text-xs font-semibold tabular-nums" style={{ color: 'var(--color-text-primary)', minWidth: 64, textAlign: 'center' }}>
-            {currentPage + 1} / {pdfDoc.numPages}
-          </span>
-          <button
-            onClick={onNextPage}
-            disabled={currentPage === pdfDoc.numPages - 1}
-            className="w-8 h-8 flex items-center justify-center rounded-lg disabled:opacity-30 active:scale-90 transition-all"
-            style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', WebkitTapHighlightColor: 'transparent' }}
-          >
-            <ChevronRight className="w-4 h-4" style={{ color: 'var(--color-text-primary)' }} />
-          </button>
-        </div>
-      )}
+            <motion.button onClick={onPrevPage} disabled={currentPage === 0} whileTap={{ scale: 0.88 }}
+              className="w-8 h-8 flex items-center justify-center rounded-lg disabled:opacity-30"
+              style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', WebkitTapHighlightColor: 'transparent' }}>
+              <ChevronLeft className="w-4 h-4" style={{ color: 'var(--color-text-primary)' }} />
+            </motion.button>
+            <span className="text-xs font-semibold tabular-nums" style={{ color: 'var(--color-text-primary)', minWidth: 64, textAlign: 'center' }}>
+              {currentPage + 1} / {pdfDoc.numPages}
+            </span>
+            <motion.button onClick={onNextPage} disabled={currentPage === pdfDoc.numPages - 1} whileTap={{ scale: 0.88 }}
+              className="w-8 h-8 flex items-center justify-center rounded-lg disabled:opacity-30"
+              style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', WebkitTapHighlightColor: 'transparent' }}>
+              <ChevronRight className="w-4 h-4" style={{ color: 'var(--color-text-primary)' }} />
+            </motion.button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {/* Primary action row — 5 symmetric slots */}
+      {/* Primary action row */}
       <div className="flex items-center justify-around px-2 py-1">
-        {/* Upload */}
-        <BottomAction
-          icon={UploadIcon}
-          label="Upload"
-          onClick={onUpload}
-          loading={loading}
-        />
-
-        {/* Text */}
-        <BottomAction
-          icon={Type}
-          label="Teks"
-          onClick={() => onToolClick('text')}
-          active={activeToolMode === 'text'}
-          disabled={!pdfDoc}
-        />
-
-        {/* Signature — primary CTA, center */}
-        <BottomAction
-          icon={PenLine}
-          label="Tanda Tangan"
-          onClick={() => onToolClick('signature')}
-          active={activeToolMode === 'signature'}
-          disabled={!pdfDoc}
-          isPrimary
-        />
-
-        {/* Date */}
-        <BottomAction
-          icon={Calendar}
-          label="Tanggal"
-          onClick={() => onToolClick('date')}
-          active={activeToolMode === 'date'}
-          disabled={!pdfDoc}
-        />
-
-        {/* Symbol */}
-        <BottomAction
-          icon={Shapes}
-          label="Simbol"
-          onClick={onToggleSymbolPicker}
-          active={activeToolMode === 'symbol' || mobileSymbolPickerOpen}
-          disabled={!pdfDoc}
-        />
+        <BottomAction icon={UploadIcon} label="Upload" onClick={onUpload} loading={loading} />
+        <BottomAction icon={Type} label="Teks" onClick={() => onToolClick('text')} active={activeToolMode === 'text'} disabled={!pdfDoc} />
+        <BottomAction icon={PenLine} label="Tanda Tangan" onClick={() => onToolClick('signature')} active={activeToolMode === 'signature'} disabled={!pdfDoc} isPrimary />
+        <BottomAction icon={Calendar} label="Tanggal" onClick={() => onToolClick('date')} active={activeToolMode === 'date'} disabled={!pdfDoc} />
+        <BottomAction icon={Shapes} label="Simbol" onClick={onToggleSymbolPicker} active={activeToolMode === 'symbol' || mobileSymbolPickerOpen} disabled={!pdfDoc} />
       </div>
     </div>
   );
 }
 
-/* ─── BottomAction: big thumb-friendly tap target ─── */
 interface BottomActionProps {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
@@ -463,45 +460,23 @@ interface BottomActionProps {
 
 function BottomAction({ icon: Icon, label, onClick, active, disabled, loading, isPrimary }: BottomActionProps) {
   const getStyle = (): React.CSSProperties => {
-    if (isPrimary) {
-      return {
-        background: active ? 'var(--color-primary-hover)' : 'var(--color-primary)',
-        color: '#fff',
-        borderRadius: 16,
-        width: 56,
-        height: 56,
-        boxShadow: '0 4px 16px rgba(67,56,202,0.35)',
-        marginTop: -8,
-      };
-    }
-    if (active) {
-      return {
-        background: '#EEF2FF',
-        color: 'var(--color-primary)',
-        borderRadius: 12,
-      };
-    }
-    return {
-      background: 'transparent',
-      color: disabled ? 'var(--color-text-disabled)' : 'var(--color-text-secondary)',
-      borderRadius: 12,
+    if (isPrimary) return {
+      background: active ? 'var(--color-primary-hover)' : 'var(--color-primary)',
+      color: '#fff', borderRadius: 16, width: 56, height: 56,
+      boxShadow: '0 4px 16px rgba(67,56,202,0.35)', marginTop: -8,
     };
+    if (active) return { background: '#EEF2FF', color: 'var(--color-primary)', borderRadius: 12 };
+    return { background: 'transparent', color: disabled ? 'var(--color-text-disabled)' : 'var(--color-text-secondary)', borderRadius: 12 };
   };
 
   return (
-    <button
+    <motion.button
       onClick={onClick}
       disabled={disabled || loading}
-      className={cn(
-        'flex flex-col items-center justify-center gap-0.5 min-w-[52px] py-1.5 px-1 transition-all active:scale-95',
-        isPrimary && 'shadow-lg',
-      )}
-      style={{
-        ...getStyle(),
-        opacity: disabled ? 0.35 : 1,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        WebkitTapHighlightColor: 'transparent',
-      }}
+      whileTap={!disabled && !loading ? { scale: isPrimary ? 0.9 : 0.88 } : {}}
+      animate={active && !isPrimary ? { backgroundColor: '#EEF2FF' } : {}}
+      className={cn('flex flex-col items-center justify-center gap-0.5 min-w-[52px] py-1.5 px-1', isPrimary && 'shadow-lg')}
+      style={{ ...getStyle(), opacity: disabled ? 0.35 : 1, cursor: disabled ? 'not-allowed' : 'pointer', WebkitTapHighlightColor: 'transparent' }}
     >
       <Icon className={cn('w-5 h-5', isPrimary && 'w-6 h-6', loading && 'animate-spin')} />
       {!isPrimary && (
@@ -509,11 +484,10 @@ function BottomAction({ icon: Icon, label, onClick, active, disabled, loading, i
           {label}
         </span>
       )}
-    </button>
+    </motion.button>
   );
 }
 
-/* ─── Desktop ToolBtn (unchanged) ─── */
 interface ToolBtnProps {
   icon: React.ComponentType<{ className?: string }>;
   label: string; shortcut?: string; active?: boolean;
@@ -529,14 +503,18 @@ function ToolBtn({ icon: Icon, label, shortcut, active, disabled, loading, iconO
     return { color: 'var(--color-text-secondary)', borderRadius: 8 };
   };
   return (
-    <button onClick={onClick} disabled={disabled || loading}
+    <motion.button
+      onClick={onClick}
+      disabled={disabled || loading}
+      whileTap={!disabled && !loading ? { scale: 0.9 } : {}}
       title={shortcut ? `${label} (${shortcut})` : label}
-      className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium transition-all"
+      className="flex items-center gap-1.5 px-2.5 py-1.5 text-sm font-medium transition-colors"
       style={{ ...getStyle(), opacity: disabled || loading ? 0.4 : 1, cursor: disabled || loading ? 'not-allowed' : 'pointer' }}
       onMouseEnter={(e) => { if (!active && !disabled && !loading) { (e.currentTarget as HTMLElement).style.background = 'var(--color-surface)'; (e.currentTarget as HTMLElement).style.color = 'var(--color-text-primary)'; } }}
-      onMouseLeave={(e) => { if (!active && !disabled && !loading) { (e.currentTarget as HTMLElement).style.background = variant === 'secondary' ? 'var(--color-surface)' : 'transparent'; (e.currentTarget as HTMLElement).style.color = variant === 'secondary' ? 'var(--color-text-primary)' : 'var(--color-text-secondary)'; } }}>
+      onMouseLeave={(e) => { if (!active && !disabled && !loading) { (e.currentTarget as HTMLElement).style.background = variant === 'secondary' ? 'var(--color-surface)' : 'transparent'; (e.currentTarget as HTMLElement).style.color = variant === 'secondary' ? 'var(--color-text-primary)' : 'var(--color-text-secondary)'; } }}
+    >
       <Icon className={cn('w-4 h-4', loading && 'animate-spin')} />
       {!iconOnly && <span className="hidden lg:inline">{label}</span>}
-    </button>
+    </motion.button>
   );
 }

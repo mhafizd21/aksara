@@ -1,5 +1,5 @@
 {
-  "name": "pdf-studio",
+  "name": "aksara",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -21,6 +21,7 @@
     "clsx": "^2.1.1",
     "immer": "^11.1.8",
     "lucide-react": "^1.17.0",
+    "motion": "^12.42.0",
     "next": "16.2.9",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "4.4.168",
